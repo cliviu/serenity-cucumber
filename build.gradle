@@ -86,7 +86,8 @@ configurations.all {
         failOnVersionConflict()
         force  "commons-collections:commons-collections:${commonsCollectionsVersion}",
         "xml-apis:xml-apis:${xmlApiVersion}",
-        "commons-codec:commons-codec:${commonsCodecVersion}"
+        "commons-codec:commons-codec:${commonsCodecVersion}",
+        "info.cukes:cucumber-html:${cucumberHTML}"
     }
 }
 
@@ -100,8 +101,8 @@ dependencies {
     compile ("net.serenity-bdd:serenity-screenplay-webdriver:${serenityCoreVersion}") {
         exclude group: "org.seleniumhq.selenium", module:"htmlunit-driver"
     }
-    compile "info.cukes:cucumber-java:${cucumberJVMVersion}"
-    compile("info.cukes:cucumber-junit:${cucumberJVMVersion}") {
+    compile "io.cucumber:cucumber-java:${cucumberJVMVersion}"
+    compile("io.cucumber:cucumber-junit:${cucumberJVMVersion}") {
             exclude group: "junit"
     }
 
