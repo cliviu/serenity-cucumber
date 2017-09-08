@@ -87,7 +87,10 @@ configurations.all {
         force  "commons-collections:commons-collections:${commonsCollectionsVersion}",
         "xml-apis:xml-apis:${xmlApiVersion}",
         "commons-codec:commons-codec:${commonsCodecVersion}",
-        "info.cukes:cucumber-html:${cucumberHTML}"
+        "info.cukes:cucumber-html:${cucumberHTML}",
+        "org.seleniumhq.selenium:selenium-support:3.5.3",
+                "org.seleniumhq.selenium:selenium-api:3.5.3",
+                "org.seleniumhq.selenium:selenium-remote-driver:3.5.3"
     }
 }
 

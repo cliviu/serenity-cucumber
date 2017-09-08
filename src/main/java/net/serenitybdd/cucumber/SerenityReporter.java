@@ -5,11 +5,12 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import cucumber.api.event.*;
+import cucumber.api.formatter.Formatter;
 import cucumber.runtime.StepDefinitionMatch;
-import gherkin.formatter.Formatter;
-import gherkin.formatter.Reporter;
-import gherkin.formatter.model.*;
-import gherkin.formatter.model.DataTableRow;
+import gherkin.ast.Feature;
+import gherkin.ast.Step;
+import gherkin.ast.Tag;
 import net.serenitybdd.core.Serenity;
 import net.serenitybdd.core.SerenityListeners;
 import net.serenitybdd.core.SerenityReports;
@@ -35,12 +36,17 @@ import static net.serenitybdd.cucumber.TaggedScenario.*;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 
+//import gherkin.formatter.Formatter;
+/*import gherkin.formatter.Reporter;
+import gherkin.formatter.model.*;
+import gherkin.formatter.model.DataTableRow;*/
+
 /**
  * Generates Thucydides reports.
  *
  * @author L.Carausu (liviu.carausu@gmail.com)
  */
-public class SerenityReporter implements Formatter, Reporter {
+public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private static final String OPEN_PARAM_CHAR = "\uff5f";
     private static final String CLOSE_PARAM_CHAR = "\uff60";
@@ -82,6 +88,122 @@ public class SerenityReporter implements Formatter, Reporter {
     private Optional<TestResult> forcedStoryResult = Optional.absent();
     private Optional<TestResult> forcedScenarioResult = Optional.absent();
 
+    private EventHandler<TestSourceRead> testSourceReadHandler = new EventHandler<TestSourceRead>() {
+        @Override
+        public void receive(TestSourceRead event) {
+            handleTestSourceRead(event);
+        }
+    };
+    private EventHandler<TestCaseStarted> caseStartedHandler= new EventHandler<TestCaseStarted>() {
+        @Override
+        public void receive(TestCaseStarted event) {
+            handleTestCaseStarted(event);
+        }
+    };
+    private EventHandler<TestStepStarted> stepStartedHandler = new EventHandler<TestStepStarted>() {
+        @Override
+        public void receive(TestStepStarted event) {
+            handleTestStepStarted(event);
+        }
+    };
+    private EventHandler<TestStepFinished> stepFinishedHandler = new EventHandler<TestStepFinished>() {
+        @Override
+        public void receive(TestStepFinished event) {
+            handleTestStepFinished(event);
+        }
+    };
+    private EventHandler<TestRunFinished> runFinishedHandler = new EventHandler<TestRunFinished>() {
+        @Override
+        public void receive(TestRunFinished event) {
+            finishReport();
+        }
+    };
+    private EventHandler<WriteEvent> writeEventhandler = new EventHandler<WriteEvent>() {
+        @Override
+        public void receive(WriteEvent event) {
+            handleWrite(event);
+        }
+    };
+    private EventHandler<EmbedEvent> embedEventhandler = new EventHandler<EmbedEvent>() {
+        @Override
+        public void receive(EmbedEvent event) {
+            handleEmbed(event);
+        }
+    };
+
+
+    @Override
+    public void setEventPublisher(EventPublisher publisher) {
+        publisher.registerHandlerFor(TestSourceRead.class, testSourceReadHandler);
+        publisher.registerHandlerFor(TestCaseStarted.class, caseStartedHandler);
+        publisher.registerHandlerFor(TestStepStarted.class, stepStartedHandler);
+        publisher.registerHandlerFor(TestStepFinished.class, stepFinishedHandler);
+        publisher.registerHandlerFor(WriteEvent.class, writeEventhandler);
+        publisher.registerHandlerFor(EmbedEvent.class, embedEventhandler);
+        publisher.registerHandlerFor(TestRunFinished.class, runFinishedHandler);
+    }
+
+    private void handleTestSourceRead(TestSourceRead event) {
+        //testSources.addTestSourceReadEvent(event.uri, event);
+        currentUri = event.uri;
+        String featuresRoot = File.separatorChar + FEATURES_ROOT_PATH + File.separatorChar;
+        if (uri.contains(featuresRoot)) {
+            currentUri = uri.substring(uri.lastIndexOf(featuresRoot) + FEATURES_ROOT_PATH.length() + 2);
+        }
+        defaultFeatureId = new File(currentUri).getName().replace(".feature", "");
+        defaultFeatureName = Inflector.getInstance().humanize(defaultFeatureId);
+        this.uri = uri;
+    }
+
+    private void handleTestCaseStarted(TestCaseStarted event) {
+        /*if (currentFeatureFile == null || !currentFeatureFile.equals(event.testCase.getUri())) {
+            currentFeatureFile = event.testCase.getUri();
+            Map<String, Object> currentFeatureMap = createFeatureMap(event.testCase);
+            featureMaps.add(currentFeatureMap);
+            currentElementsList = (List<Map<String, Object>>) currentFeatureMap.get("elements");
+        }
+        currentTestCaseMap = createTestCase(event.testCase);
+        if (testSources.hasBackground(currentFeatureFile, event.testCase.getLine())) {
+            currentElementMap = createBackground(event.testCase);
+            currentElementsList.add(currentElementMap);
+        } else {
+            currentElementMap = currentTestCaseMap;
+        }
+        currentElementsList.add(currentTestCaseMap);
+        currentStepsList = (List<Map<String, Object>>) currentElementMap.get("steps");*/
+    }
+
+    private void handleTestStepStarted(TestStepStarted event) {
+        /*if (!event.testStep.isHook()) {
+            if (isFirstStepAfterBackground(event.testStep)) {
+                currentElementMap = currentTestCaseMap;
+                currentStepsList = (List<Map<String, Object>>) currentElementMap.get("steps");
+            }
+            currentStepOrHookMap = createTestStep(event.testStep);
+            currentStepsList.add(currentStepOrHookMap);
+        } else {
+            currentStepOrHookMap = createHookStep(event.testStep);
+            addHookStepToTestCaseMap(currentStepOrHookMap, event.testStep.getHookType());
+        }*/
+    }
+
+    private void handleWrite(WriteEvent event) {
+        //addOutputToHookMap(event.text);
+    }
+
+    private void handleEmbed(EmbedEvent event) {
+        //addEmbeddingToHookMap(event.data, event.mimeType);
+    }
+
+    private void handleTestStepFinished(TestStepFinished event) {
+        /*currentStepOrHookMap.put("match", createMatchMap(event.testStep, event.result));
+        currentStepOrHookMap.put("result", createResultMap(event.result));*/
+    }
+
+    private void finishReport() {
+        /*out.append(gson.toJson(featureMaps));
+        out.close();*/
+    }
 
     private void clearStoryResult() {
         forcedStoryResult = Optional.absent();
@@ -125,13 +247,10 @@ public class SerenityReporter implements Formatter, Reporter {
         return SerenityReports.getReportService(systemConfiguration);
     }
 
-    @Override
-    public void syntaxError(String state, String event, List<String> legalEvents, String uri, Integer line) {
-    }
 
     private String uri;
 
-    @Override
+    /*@Override
     public void uri(String uri) {
         currentUri = uri;
         String featuresRoot = File.separatorChar + FEATURES_ROOT_PATH + File.separatorChar;
@@ -141,7 +260,7 @@ public class SerenityReporter implements Formatter, Reporter {
         defaultFeatureId = new File(currentUri).getName().replace(".feature", "");
         defaultFeatureName = Inflector.getInstance().humanize(defaultFeatureId);
         this.uri = uri;
-    }
+    }*/
 
     FeatureFileContents featureFileContents() {
         return new FeatureFileContents(uri);

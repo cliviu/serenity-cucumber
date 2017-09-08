@@ -1,7 +1,8 @@
 package net.serenitybdd.cucumber;
 
 import com.google.common.collect.ImmutableList;
-import gherkin.formatter.model.Tag;
+//import gherkin.formatter.model.Tag;
+import gherkin.ast.Tag;
 
 import java.util.List;
 
