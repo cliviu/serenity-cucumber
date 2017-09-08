@@ -6,7 +6,7 @@ import cucumber.runtime.ClassFinder;
 import cucumber.runtime.Runtime;
 import cucumber.runtime.RuntimeOptions;
 import cucumber.runtime.RuntimeOptionsFactory;
-import cucumber.runtime.io.MultiLoader;
+import cucumber.runtime.formatter.SerenityReporter;
 import cucumber.runtime.io.ResourceLoader;
 import cucumber.runtime.io.ResourceLoaderClassFinder;
 import net.thucydides.core.ThucydidesSystemProperty;
@@ -16,7 +16,6 @@ import net.thucydides.core.webdriver.Configuration;
 import org.junit.runners.model.InitializationError;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;

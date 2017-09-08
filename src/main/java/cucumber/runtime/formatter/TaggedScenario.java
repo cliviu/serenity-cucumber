@@ -1,4 +1,4 @@
-package net.serenitybdd.cucumber;
+package cucumber.runtime.formatter;
 
 import com.google.common.collect.ImmutableList;
 //import gherkin.formatter.model.Tag;

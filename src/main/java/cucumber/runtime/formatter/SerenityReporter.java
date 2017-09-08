@@ -1,21 +1,26 @@
-package net.serenitybdd.cucumber;
+package cucumber.runtime.formatter;
 
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import cucumber.api.Result;
+import cucumber.api.TestCase;
+import cucumber.api.TestStep;
 import cucumber.api.event.*;
 import cucumber.api.formatter.Formatter;
+import cucumber.runtime.Match;
 import cucumber.runtime.StepDefinitionMatch;
-import gherkin.ast.Feature;
-import gherkin.ast.Step;
-import gherkin.ast.Tag;
+import cucumber.runtime.formatter.TestSourcesModel;
+import gherkin.ast.*;
+import gherkin.pickles.*;
 import net.serenitybdd.core.Serenity;
 import net.serenitybdd.core.SerenityListeners;
 import net.serenitybdd.core.SerenityReports;
 import net.serenitybdd.cucumber.model.FeatureFileContents;
 import net.thucydides.core.model.*;
+import net.thucydides.core.model.DataTable;
 import net.thucydides.core.model.stacktrace.FailureCause;
 import net.thucydides.core.model.stacktrace.RootCauseAnalyzer;
 import net.thucydides.core.reports.ReportService;
@@ -32,7 +37,8 @@ import java.io.File;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static net.serenitybdd.cucumber.TaggedScenario.*;
+//import static net.serenitybdd.cucumber.TaggedScenario.*;
+import static cucumber.runtime.formatter.TaggedScenario.*;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 
@@ -87,6 +93,16 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private Optional<TestResult> forcedStoryResult = Optional.absent();
     private Optional<TestResult> forcedScenarioResult = Optional.absent();
+
+
+    private String currentFeatureFile;
+    private List<Map<String, Object>> featureMaps = new ArrayList<Map<String, Object>>();
+    private List<Map<String, Object>> currentElementsList;
+    private Map<String, Object> currentElementMap;
+    private Map<String, Object> currentTestCaseMap;
+    private List<Map<String, Object>> currentStepsList;
+    private Map<String, Object> currentStepOrHookMap;
+    private final TestSourcesModel testSources = new TestSourcesModel();
 
     private EventHandler<TestSourceRead> testSourceReadHandler = new EventHandler<TestSourceRead>() {
         @Override
@@ -144,7 +160,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestSourceRead(TestSourceRead event) {
-        //testSources.addTestSourceReadEvent(event.uri, event);
+        testSources.addTestSourceReadEvent(event.uri, event);
         currentUri = event.uri;
         String featuresRoot = File.separatorChar + FEATURES_ROOT_PATH + File.separatorChar;
         if (uri.contains(featuresRoot)) {
@@ -156,7 +172,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestCaseStarted(TestCaseStarted event) {
-        /*if (currentFeatureFile == null || !currentFeatureFile.equals(event.testCase.getUri())) {
+        if (currentFeatureFile == null || !currentFeatureFile.equals(event.testCase.getUri())) {
             currentFeatureFile = event.testCase.getUri();
             Map<String, Object> currentFeatureMap = createFeatureMap(event.testCase);
             featureMaps.add(currentFeatureMap);
@@ -170,7 +186,186 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             currentElementMap = currentTestCaseMap;
         }
         currentElementsList.add(currentTestCaseMap);
-        currentStepsList = (List<Map<String, Object>>) currentElementMap.get("steps");*/
+        currentStepsList = (List<Map<String, Object>>) currentElementMap.get("steps");
+
+        TestCase testCase = event.testCase;
+        Feature feature = testSources.getFeature(testCase.getUri());
+
+        assureTestSuiteFinished();
+        if (testCase.getName().isEmpty()) {
+            feature = featureWithDefaultName(feature, defaultFeatureName, defaultFeatureId);
+        }
+
+        currentFeature = feature;
+        clearStoryResult();
+
+        configureDriver(feature);
+        getThucydidesListeners();
+        Story userStory = Story.withIdAndPath(TestSourcesModel.convertToId(feature.getName()), feature.getName(), currentUri).asFeature();
+
+        if (!isEmpty(feature.getDescription())) {
+            userStory = userStory.withNarrative(feature.getDescription());
+        }
+        StepEventBus.getEventBus().testSuiteStarted(userStory);
+
+        checkForPending(feature);
+        checkForSkipped(feature);
+        checkForIgnored(feature);
+        checkForManual(feature);
+    }
+
+    private Map<String, Object> createFeatureMap(TestCase testCase) {
+        Map<String, Object> featureMap = new HashMap<String, Object>();
+        featureMap.put("uri", testCase.getUri());
+        featureMap.put("elements", new ArrayList<Map<String, Object>>());
+        Feature feature = testSources.getFeature(testCase.getUri());
+        if (feature != null) {
+            featureMap.put("keyword", feature.getKeyword());
+            featureMap.put("name", feature.getName());
+            featureMap.put("description", feature.getDescription() != null ? feature.getDescription() : "");
+            featureMap.put("line", feature.getLocation().getLine());
+            featureMap.put("id", TestSourcesModel.convertToId(feature.getName()));
+        }
+        return featureMap;
+    }
+
+    private Map<String, Object> createTestCase(TestCase testCase) {
+        Map<String, Object> testCaseMap = new HashMap<String, Object>();
+        testCaseMap.put("name", testCase.getName());
+        testCaseMap.put("line", testCase.getLine());
+        testCaseMap.put("type", "scenario");
+        TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, testCase.getLine());
+        if (astNode != null) {
+            testCaseMap.put("id", TestSourcesModel.calculateId(astNode));
+            ScenarioDefinition scenarioDefinition = TestSourcesModel.getScenarioDefinition(astNode);
+            testCaseMap.put("keyword", scenarioDefinition.getKeyword());
+            testCaseMap.put("description", scenarioDefinition.getDescription() != null ? scenarioDefinition.getDescription() : "");
+        }
+        testCaseMap.put("steps", new ArrayList<Map<String, Object>>());
+        if (!testCase.getTags().isEmpty()) {
+            List<Map<String, Object>> tagList = new ArrayList<Map<String, Object>>();
+            for (PickleTag tag : testCase.getTags()) {
+                Map<String, Object> tagMap = new HashMap<String, Object>();
+                tagMap.put("name", tag.getName());
+                tagList.add(tagMap);
+            }
+            testCaseMap.put("tags", tagList);
+        }
+        return testCaseMap;
+    }
+    private Map<String, Object> createBackground(TestCase testCase) {
+        TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, testCase.getLine());
+        if (astNode != null) {
+            Background background = TestSourcesModel.getBackgoundForTestCase(astNode);
+            Map<String, Object> testCaseMap = new HashMap<String, Object>();
+            testCaseMap.put("name", background.getName());
+            testCaseMap.put("line", background.getLocation().getLine());
+            testCaseMap.put("type", "background");
+            testCaseMap.put("keyword", background.getKeyword());
+            testCaseMap.put("description", background.getDescription() != null ? background.getDescription() : "");
+            testCaseMap.put("steps", new ArrayList<Map<String, Object>>());
+            return testCaseMap;
+        }
+        return null;
+    }
+
+    private boolean isFirstStepAfterBackground(TestStep testStep) {
+        TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, testStep.getStepLine());
+        if (astNode != null) {
+            if (currentElementMap != currentTestCaseMap && !TestSourcesModel.isBackgroundStep(astNode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Map<String, Object> createTestStep(TestStep testStep) {
+        Map<String, Object> stepMap = new HashMap<String, Object>();
+        stepMap.put("name", testStep.getStepText());
+        stepMap.put("line", testStep.getStepLine());
+        if (!testStep.getStepArgument().isEmpty()) {
+            Argument argument = testStep.getStepArgument().get(0);
+            if (argument instanceof PickleString) {
+                stepMap.put("doc_string", createDocStringMap(argument));
+            } else if (argument instanceof PickleTable) {
+                stepMap.put("rows", createDataTableList(argument));
+            }
+        }
+        TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, testStep.getStepLine());
+        if (astNode != null) {
+            Step step = (Step) astNode.node;
+            stepMap.put("keyword", step.getKeyword());
+        }
+
+        return stepMap;
+    }
+
+    private Map<String, Object> createDocStringMap(Argument argument) {
+        Map<String, Object> docStringMap = new HashMap<String, Object>();
+        PickleString docString = ((PickleString)argument);
+        docStringMap.put("value", docString.getContent());
+        docStringMap.put("line", docString.getLocation().getLine());
+        return docStringMap;
+    }
+
+    private List<Map<String, Object>> createDataTableList(Argument argument) {
+        List<Map<String, Object>> rowList = new ArrayList<Map<String, Object>>();
+        for (PickleRow row : ((PickleTable)argument).getRows()) {
+            Map<String, Object> rowMap = new HashMap<String, Object>();
+            rowMap.put("cells", createCellList(row));
+            rowList.add(rowMap);
+        }
+        return rowList;
+    }
+
+    private List<String> createCellList(PickleRow row) {
+        List<String> cells = new ArrayList<String>();
+        for (PickleCell cell : row.getCells()) {
+            cells.add(cell.getValue());
+        }
+        return cells;
+    }
+
+    private Map<String, Object> createHookStep(TestStep testStep) {
+        return new HashMap<String, Object>();
+    }
+
+    /*private void addHookStepToTestCaseMap(Map<String, Object> currentStepOrHookMap, HookType hookType) {
+        if (!currentTestCaseMap.containsKey(hookType.toString())) {
+            currentTestCaseMap.put(hookType.toString(), new ArrayList<Map<String, Object>>());
+        }
+        ((List<Map<String, Object>>)currentTestCaseMap.get(hookType.toString())).add(currentStepOrHookMap);
+    } */
+
+    
+    private Map<String, Object> createMatchMap(TestStep testStep, Result result) {
+        Map<String, Object> matchMap = new HashMap<String, Object>();
+        if (!testStep.getDefinitionArgument().isEmpty()) {
+            List<Map<String, Object>> argumentList = new ArrayList<Map<String, Object>>();
+            for (cucumber.runtime.Argument argument : testStep.getDefinitionArgument()) {
+                Map<String, Object> argumentMap = new HashMap<String, Object>();
+                argumentMap.put("val", argument.getVal());
+                argumentMap.put("offset", argument.getOffset());
+                argumentList.add(argumentMap);
+            }
+            matchMap.put("arguments", argumentList);
+        }
+        if (!result.is(Result.Type.UNDEFINED)) {
+            matchMap.put("location", testStep.getCodeLocation());
+        }
+        return matchMap;
+    }
+
+    private Map<String, Object> createResultMap(Result result) {
+        Map<String, Object> resultMap = new HashMap<String, Object>();
+        resultMap.put("status", result.getStatus().lowerCaseName());
+        if (result.getErrorMessage() != null) {
+            resultMap.put("error_message", result.getErrorMessage());
+        }
+        if (result.getDuration() != null && result.getDuration() != 0) {
+            resultMap.put("duration", result.getDuration());
+        }
+        return resultMap;
     }
 
     private void handleTestStepStarted(TestStepStarted event) {
@@ -188,7 +383,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleWrite(WriteEvent event) {
-        //addOutputToHookMap(event.text);
+        StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(event.text));
     }
 
     private void handleEmbed(EmbedEvent event) {
@@ -266,7 +461,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         return new FeatureFileContents(uri);
     }
 
-    @Override
+   /* @Override
     public void feature(Feature feature) {
 
         assureTestSuiteFinished();
@@ -290,16 +485,17 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         checkForSkipped(feature);
         checkForIgnored(feature);
         checkForManual(feature);
-    }
+    }*/
 
     private Feature featureWithDefaultName(Feature feature, String defaultName, String id) {
-        return new Feature(feature.getComments(),
+        return feature; //TODO
+        /*return new Feature(feature.getComments(),
                 feature.getTags(),
                 feature.getKeyword(),
                 defaultName,
                 feature.getDescription(),
                 feature.getLine(),
-                id);
+                id);*/
     }
 
     private void checkForPending(Feature feature) {
@@ -353,6 +549,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             StepEventBus.getEventBus().suspendTest(TestResult.SKIPPED);
         }
     }
+    
 
     private void configureDriver(Feature feature) {
         StepEventBus.getEventBus().setUniqueSession(systemConfiguration.shouldUseAUniqueBrowser());
@@ -508,8 +705,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     @Override
     public void startOfScenarioLifeCycle(Scenario scenario) {
 
-        boolean newScenario = !scenarioIdFrom(scenario.getId()).equals(currentScenario);
-        currentScenario = scenarioIdFrom(scenario.getId());
+        boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName())).equals(currentScenario);
+        currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName()));
 
         if (examplesRunning) {
 
@@ -529,7 +726,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     private void startScenario(Scenario scenario) {
         clearScenarioResult();
         StepEventBus.getEventBus().setTestSource(StepEventBus.TEST_SOURCE_CUCUMBER);
-        StepEventBus.getEventBus().testStarted(scenario.getName(), scenario.getId());
+        StepEventBus.getEventBus().testStarted(scenario.getName(), TestSourcesModel.convertToId(scenario.getName()));
         StepEventBus.getEventBus().addDescriptionToCurrentTest(scenario.getDescription());
         StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(currentFeature.getTags()));
         StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(scenario.getTags()));
@@ -705,9 +902,9 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     @Override
     public void result(Result result) {
         Step currentStep = stepQueue.poll();
-        if (Result.PASSED.equals(result.getStatus())) {
+        if (Result.Type.PASSED.equals(result.getStatus())) {
             StepEventBus.getEventBus().stepFinished();
-        } else if (Result.FAILED.equals(result.getStatus())) {
+        } else if (Result.Type.FAILED.equals(result.getStatus())) {
             failed(stepTitleFrom(currentStep), result.getError());
         } else if (Result.SKIPPED.equals(result)) {
             StepEventBus.getEventBus().stepIgnored();
@@ -785,9 +982,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         return (AssumptionViolatedException.class.isAssignableFrom(rootCause.getClass()));
     }
 
-    @Override
-    public void after(Match match, Result result) {
-    }
+   
 
     @Override
     public void match(Match match) {
@@ -826,15 +1021,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         }
         return textTable.toString();
     }
-
-    @Override
-    public void embedding(String mimeType, byte[] data) {
-    }
-
-    @Override
-    public void write(String text) {
-        StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle("message"));
-    }
+    
 
     private synchronized void generateReports() {
         getReportService().generateReportsFor(getAllTestOutcomes());
