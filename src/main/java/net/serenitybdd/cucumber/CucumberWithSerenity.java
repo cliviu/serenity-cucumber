@@ -52,12 +52,12 @@ public class CucumberWithSerenity extends Cucumber {
     protected cucumber.runtime.Runtime createRuntime(ResourceLoader resourceLoader,
                                                      ClassLoader classLoader,
                                                      RuntimeOptions runtimeOptions) throws InitializationError, IOException {
-        runtimeOptions.getFilters().addAll(environmentSpecifiedTags(runtimeOptions.getFilters()));
+        runtimeOptions.getTagFilters().addAll(environmentSpecifiedTags(runtimeOptions.getTagFilters()));
         RUNTIME_OPTIONS.set(runtimeOptions);
         return CucumberWithSerenityRuntime.using(resourceLoader, classLoader, runtimeOptions);
     }
 
-    private Collection<String> environmentSpecifiedTags(List<Object> existingTags) {
+    private Collection<String> environmentSpecifiedTags(List<? extends Object> existingTags) {
         EnvironmentVariables environmentVariables = Injectors.getInjector().getInstance(EnvironmentVariables.class);
         String tagsExpression = ThucydidesSystemProperty.TAGS.from(environmentVariables,"");
         List<String> existingTagsValues = existingTags.stream().map(Object::toString).collect(Collectors.toList());

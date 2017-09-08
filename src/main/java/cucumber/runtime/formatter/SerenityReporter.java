@@ -5,6 +5,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import cucumber.api.HookType;
 import cucumber.api.Result;
 import cucumber.api.TestCase;
 import cucumber.api.TestStep;
@@ -12,15 +13,14 @@ import cucumber.api.event.*;
 import cucumber.api.formatter.Formatter;
 import cucumber.runtime.Match;
 import cucumber.runtime.StepDefinitionMatch;
-import cucumber.runtime.formatter.TestSourcesModel;
 import gherkin.ast.*;
 import gherkin.pickles.*;
 import net.serenitybdd.core.Serenity;
 import net.serenitybdd.core.SerenityListeners;
 import net.serenitybdd.core.SerenityReports;
 import net.serenitybdd.cucumber.model.FeatureFileContents;
-import net.thucydides.core.model.*;
 import net.thucydides.core.model.DataTable;
+import net.thucydides.core.model.*;
 import net.thucydides.core.model.stacktrace.FailureCause;
 import net.thucydides.core.model.stacktrace.RootCauseAnalyzer;
 import net.thucydides.core.reports.ReportService;
@@ -37,10 +37,11 @@ import java.io.File;
 import java.util.*;
 import java.util.stream.Collectors;
 
-//import static net.serenitybdd.cucumber.TaggedScenario.*;
 import static cucumber.runtime.formatter.TaggedScenario.*;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
+
+//import static net.serenitybdd.cucumber.TaggedScenario.*;
 
 //import gherkin.formatter.Formatter;
 /*import gherkin.formatter.Reporter;
@@ -131,7 +132,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     private EventHandler<TestRunFinished> runFinishedHandler = new EventHandler<TestRunFinished>() {
         @Override
         public void receive(TestRunFinished event) {
-            finishReport();
+            finishReport(event);
         }
     };
     private EventHandler<WriteEvent> writeEventhandler = new EventHandler<WriteEvent>() {
@@ -330,12 +331,34 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         return new HashMap<String, Object>();
     }
 
-    /*private void addHookStepToTestCaseMap(Map<String, Object> currentStepOrHookMap, HookType hookType) {
+    private void addHookStepToTestCaseMap(Map<String, Object> currentStepOrHookMap, HookType hookType) {
         if (!currentTestCaseMap.containsKey(hookType.toString())) {
             currentTestCaseMap.put(hookType.toString(), new ArrayList<Map<String, Object>>());
         }
         ((List<Map<String, Object>>)currentTestCaseMap.get(hookType.toString())).add(currentStepOrHookMap);
-    } */
+    }
+
+    private void addOutputToHookMap(String text) {
+        if (!currentStepOrHookMap.containsKey("output")) {
+            currentStepOrHookMap.put("output", new ArrayList<String>());
+        }
+        ((List<String>)currentStepOrHookMap.get("output")).add(text);
+    }
+
+    private void addEmbeddingToHookMap(byte[] data, String mimeType) {
+        if (!currentStepOrHookMap.containsKey("embedding")) {
+            currentStepOrHookMap.put("embedding", new ArrayList<Map<String, Object>>());
+        }
+        Map<String, Object> embedMap = createEmbeddingMap(data, mimeType);
+        ((List<Map<String, Object>>)currentStepOrHookMap.get("embedding")).add(embedMap);
+    }
+
+    private Map<String, Object> createEmbeddingMap(byte[] data, String mimeType) {
+        Map<String, Object> embedMap = new HashMap<String, Object>();
+        embedMap.put("mime_type", mimeType);
+        //embedMap.put("data", Base64.encodeBytes(data));
+        return embedMap;
+    }
 
     
     private Map<String, Object> createMatchMap(TestStep testStep, Result result) {
@@ -369,7 +392,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestStepStarted(TestStepStarted event) {
-        /*if (!event.testStep.isHook()) {
+        if (!event.testStep.isHook()) {
             if (isFirstStepAfterBackground(event.testStep)) {
                 currentElementMap = currentTestCaseMap;
                 currentStepsList = (List<Map<String, Object>>) currentElementMap.get("steps");
@@ -379,7 +402,18 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         } else {
             currentStepOrHookMap = createHookStep(event.testStep);
             addHookStepToTestCaseMap(currentStepOrHookMap, event.testStep.getHookType());
-        }*/
+        }
+        TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, event.testStep.getStepLine());
+        if (astNode != null) {
+            Step step = (Step) astNode.node;
+            handleStep(step);
+        }
+    }
+
+    public void handleStep(Step step) {
+        if (!addingScenarioOutlineSteps) {
+            stepQueue.add(step);
+        }
     }
 
     private void handleWrite(WriteEvent event) {
@@ -391,13 +425,24 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestStepFinished(TestStepFinished event) {
-        /*currentStepOrHookMap.put("match", createMatchMap(event.testStep, event.result));
-        currentStepOrHookMap.put("result", createResultMap(event.result));*/
+        currentStepOrHookMap.put("match", createMatchMap(event.testStep, event.result));
+        currentStepOrHookMap.put("result", createResultMap(event.result));
+        //TODO
+        handleMatch();
+        handleResult(event.result);
     }
 
-    private void finishReport() {
+    private void finishReport(TestRunFinished event) {
         /*out.append(gson.toJson(featureMaps));
         out.close();*/
+        //TODO
+        //checkForLifecycleTags(scenario);
+        updateTestResultsFromTags();
+        if (examplesRunning) {
+            finishExample();
+        } else {
+            generateReports();
+        }
     }
 
     private void clearStoryResult() {
@@ -596,14 +641,16 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     int scenarioOutlineStartsAt;
     int scenarioOutlineEndsAt;
 
+    /*TODO
     @Override
     public void scenarioOutline(ScenarioOutline scenarioOutline) {
         addingScenarioOutlineSteps = true;
         scenarioOutlineStartsAt = scenarioOutline.getLine();
-    }
+    }*/
 
     String currentScenarioId;
 
+    /* TODO
     @Override
     public void examples(Examples examples) {
 
@@ -628,7 +675,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         exampleCount = examples.getRows().size() - 1;
 
         currentScenarioId = scenarioId;
-    }
+    }*/
 
     private String scenarioIdFrom(String scenarioIdOrExampleId) {
         String[] idElements = scenarioIdOrExampleId.split(";");
@@ -811,7 +858,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         return issues;
     }
 
-    @Override
+    /*@Override
     public void endOfScenarioLifeCycle(Scenario scenario) {
         checkForLifecycleTags(scenario);
         updateTestResultsFromTags();
@@ -820,7 +867,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         } else {
             generateReports();
         }
-    }
+    }*/
 
     private void startExample() {
         Map<String, String> data = exampleRows.get(currentExample);
@@ -860,12 +907,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         clearScenarioResult();
     }
 
-    @Override
-    public void step(Step step) {
-        if (!addingScenarioOutlineSteps) {
-            stepQueue.add(step);
-        }
-    }
 
     @Override
     public void done() {
@@ -887,10 +928,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         }
     }
 
-    @Override
-    public void eof() {
-
-    }
 
     @Override
     public void before(Match match, Result result) {
@@ -899,8 +936,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     FailureCause nestedResult;
 
-    @Override
-    public void result(Result result) {
+
+    public void handleResult(Result result) {
         Step currentStep = stepQueue.poll();
         if (Result.Type.PASSED.equals(result.getStatus())) {
             StepEventBus.getEventBus().stepFinished();
@@ -927,7 +964,14 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                 StepEventBus.getEventBus().testFinished();
             }
         }
-
+    }
+    private void handleMatch(Match match) {
+        if (match instanceof StepDefinitionMatch) {
+            Step currentStep = stepQueue.peek();
+            String stepTitle = stepTitleFrom(currentStep);
+            StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitle));
+            StepEventBus.getEventBus().updateCurrentStepTitle(normalized(stepTitle));
+        }
     }
 
     private void updatePendingResults() {
@@ -982,9 +1026,10 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         return (AssumptionViolatedException.class.isAssignableFrom(rootCause.getClass()));
     }
 
+
    
 
-    @Override
+    /*@Override
     public void match(Match match) {
         if (match instanceof StepDefinitionMatch) {
             Step currentStep = stepQueue.peek();
@@ -992,7 +1037,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitle));
             StepEventBus.getEventBus().updateCurrentStepTitle(normalized(stepTitle));
         }
-    }
+    }*/
 
     private String stepTitleFrom(Step currentStep) {
         return currentStep.getKeyword()
