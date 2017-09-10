@@ -11,8 +11,8 @@ import cucumber.api.TestCase;
 import cucumber.api.TestStep;
 import cucumber.api.event.*;
 import cucumber.api.formatter.Formatter;
+import cucumber.runner.PickleTestStep;
 import cucumber.runtime.Match;
-import cucumber.runtime.StepDefinitionMatch;
 import gherkin.ast.*;
 import gherkin.pickles.*;
 import net.serenitybdd.core.Serenity;
@@ -95,6 +95,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     private Optional<TestResult> forcedStoryResult = Optional.absent();
     private Optional<TestResult> forcedScenarioResult = Optional.absent();
 
+    private FeatureFileContents featureFileContents;
+
 
     private String currentFeatureFile;
     private List<Map<String, Object>> featureMaps = new ArrayList<Map<String, Object>>();
@@ -151,6 +153,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     @Override
     public void setEventPublisher(EventPublisher publisher) {
+        System.out.println("XXX SetEvent Publisher " + publisher);
         publisher.registerHandlerFor(TestSourceRead.class, testSourceReadHandler);
         publisher.registerHandlerFor(TestCaseStarted.class, caseStartedHandler);
         publisher.registerHandlerFor(TestStepStarted.class, stepStartedHandler);
@@ -161,15 +164,17 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestSourceRead(TestSourceRead event) {
+        System.out.println("XXX handle TestSourceRead");
         testSources.addTestSourceReadEvent(event.uri, event);
-        currentUri = event.uri;
+        String uri = event.uri;
+        currentUri = uri;
         String featuresRoot = File.separatorChar + FEATURES_ROOT_PATH + File.separatorChar;
         if (uri.contains(featuresRoot)) {
             currentUri = uri.substring(uri.lastIndexOf(featuresRoot) + FEATURES_ROOT_PATH.length() + 2);
         }
         defaultFeatureId = new File(currentUri).getName().replace(".feature", "");
         defaultFeatureName = Inflector.getInstance().humanize(defaultFeatureId);
-        this.uri = uri;
+        featureFileContents = new FeatureFileContents(uri);
     }
 
     private void handleTestCaseStarted(TestCaseStarted event) {
@@ -213,6 +218,14 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         checkForSkipped(feature);
         checkForIgnored(feature);
         checkForManual(feature);
+
+        TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, testCase.getLine());
+        if (astNode != null) {
+            ScenarioDefinition scenarioDefinition = TestSourcesModel.getScenarioDefinition(astNode);
+            former_scenario((Scenario)scenarioDefinition);
+            startOfScenarioLifeCycle((Scenario)scenarioDefinition);
+        }
+
     }
 
     private Map<String, Object> createFeatureMap(TestCase testCase) {
@@ -258,6 +271,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, testCase.getLine());
         if (astNode != null) {
             Background background = TestSourcesModel.getBackgoundForTestCase(astNode);
+            former_background(background);
             Map<String, Object> testCaseMap = new HashMap<String, Object>();
             testCaseMap.put("name", background.getName());
             testCaseMap.put("line", background.getLocation().getLine());
@@ -403,11 +417,19 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             currentStepOrHookMap = createHookStep(event.testStep);
             addHookStepToTestCaseMap(currentStepOrHookMap, event.testStep.getHookType());
         }
-        TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, event.testStep.getStepLine());
-        if (astNode != null) {
-            Step step = (Step) astNode.node;
-            handleStep(step);
+
+        if(event.testStep instanceof PickleTestStep) {
+            System.out.println("PickleTestStep " + event.testStep);
+            TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, event.testStep.getStepLine());
+            if (astNode != null) {
+                Step step = (Step) astNode.node;
+                handleStep(step);
+                handleMatch();
+            }
+        } else {
+            System.out.println("UnskippableStep " + event.testStep);
         }
+
     }
 
     public void handleStep(Step step) {
@@ -415,6 +437,19 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             stepQueue.add(step);
         }
     }
+
+    private void handleMatch(/*Match match*/) {
+
+        //if (match instanceof StepDefinitionMatch) {
+            Step currentStep = stepQueue.peek();
+            String stepTitle = stepTitleFrom(currentStep);
+            Thread.dumpStack();
+        System.out.println("HandleMatch for step " + stepTitle);
+            StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitle));
+            StepEventBus.getEventBus().updateCurrentStepTitle(normalized(stepTitle));
+        //}
+    }
+
 
     private void handleWrite(WriteEvent event) {
         StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(event.text));
@@ -425,16 +460,16 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestStepFinished(TestStepFinished event) {
+        System.out.println("TestStepFinished " + event.testStep/*.getStepText()*/);
         currentStepOrHookMap.put("match", createMatchMap(event.testStep, event.result));
         currentStepOrHookMap.put("result", createResultMap(event.result));
         //TODO
-        handleMatch();
-        handleResult(event.result);
+        if(event.testStep instanceof PickleTestStep) {
+            handleResult(event.result);
+        }
     }
 
     private void finishReport(TestRunFinished event) {
-        /*out.append(gson.toJson(featureMaps));
-        out.close();*/
         //TODO
         //checkForLifecycleTags(scenario);
         updateTestResultsFromTags();
@@ -443,6 +478,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         } else {
             generateReports();
         }
+        former_done();
     }
 
     private void clearStoryResult() {
@@ -488,7 +524,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
 
-    private String uri;
+    //private String uri;
 
     /*@Override
     public void uri(String uri) {
@@ -503,7 +539,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }*/
 
     FeatureFileContents featureFileContents() {
-        return new FeatureFileContents(uri);
+        return new FeatureFileContents(currentUri);
     }
 
    /* @Override
@@ -612,6 +648,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         List<String> tagNames = Lists.newArrayList();
         for (Tag tag : tags) {
             tagNames.add(tag.getName());
+
         }
         return tagNames;
     }
@@ -688,7 +725,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         exampleRows = new ArrayList<>();
     }
 
-    private List<String> getHeadersFrom(List<ExamplesTableRow> examplesTableRows) {
+   /* TODO
+   private List<String> getHeadersFrom(List<ExamplesTableRow> examplesTableRows) {
         ExamplesTableRow headerRow = examplesTableRows.get(0);
         return headerRow.getCells();
     }
@@ -717,7 +755,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             row.put(headers.get(j), currentTableRow.getCells().get(j));
         }
         exampleRows.add(row);
-    }
+    }*/
 
     private DataTable thucydidesTableFrom(String scenarioOutline,
                                           List<String> headers,
@@ -749,7 +787,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     String currentScenario;
 
-    @Override
+
     public void startOfScenarioLifeCycle(Scenario scenario) {
 
         boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName())).equals(currentScenario);
@@ -894,27 +932,27 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         }
     }
 
-    @Override
-    public void background(Background background) {
+    //@Override
+    public void former_background(Background background) {
         waitingToProcessBackgroundSteps = true;
         StepEventBus.getEventBus().setBackgroundTitle(background.getName());
         StepEventBus.getEventBus().setBackgroundDescription(background.getDescription());
     }
 
-    @Override
-    public void scenario(Scenario scenario) {
+
+    public void former_scenario(Scenario scenario) {
         configureDriver(currentFeature);
         clearScenarioResult();
     }
 
 
-    @Override
-    public void done() {
+
+    public void former_done() {
         assureTestSuiteFinished();
     }
 
-    @Override
-    public void close() {
+
+    public void former_close() {
         assureTestSuiteFinished();
     }
 
@@ -929,8 +967,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
 
-    @Override
-    public void before(Match match, Result result) {
+
+    public void former_before(Match match, Result result) {
         nestedResult = null;
     }
 
@@ -938,6 +976,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
 
     public void handleResult(Result result) {
+        System.out.println("XXXResult " + result.getStatus());
         Step currentStep = stepQueue.poll();
         if (Result.Type.PASSED.equals(result.getStatus())) {
             StepEventBus.getEventBus().stepFinished();
@@ -963,14 +1002,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                 updateSkippedResults();
                 StepEventBus.getEventBus().testFinished();
             }
-        }
-    }
-    private void handleMatch(Match match) {
-        if (match instanceof StepDefinitionMatch) {
-            Step currentStep = stepQueue.peek();
-            String stepTitle = stepTitleFrom(currentStep);
-            StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitle));
-            StepEventBus.getEventBus().updateCurrentStepTitle(normalized(stepTitle));
         }
     }
 
@@ -1008,7 +1039,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             return false;
         }
 
-        Optional<TestStep> matchingTestStep = latestTestOutcome().get().testStepWithDescription(stepTitle);
+        Optional<net.thucydides.core.model.TestStep> matchingTestStep = latestTestOutcome().get().testStepWithDescription(stepTitle);
         if (matchingTestStep.isPresent() && matchingTestStep.get().getException() != null) {
             return (matchingTestStep.get().getException().getOriginalCause() == cause);
         }
@@ -1041,11 +1072,12 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private String stepTitleFrom(Step currentStep) {
         return currentStep.getKeyword()
-                + currentStep.getName()
-                + embeddedTableDataIn(currentStep);
+                //TODO get Name
+                + currentStep.getText();
+       //         + embeddedTableDataIn(currentStep);
     }
 
-    private String embeddedTableDataIn(Step currentStep) {
+    /*private String embeddedTableDataIn(Step currentStep) {
         return (currentStep.getRows() == null || currentStep.getRows().isEmpty()) ?
                 "" : convertToTextTable(currentStep.getRows());
     }
@@ -1065,10 +1097,11 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             }
         }
         return textTable.toString();
-    }
+    }*/
     
 
     private synchronized void generateReports() {
+        Thread.dumpStack();
         getReportService().generateReportsFor(getAllTestOutcomes());
     }
 

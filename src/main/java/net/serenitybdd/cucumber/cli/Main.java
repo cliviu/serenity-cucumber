@@ -6,8 +6,8 @@ import cucumber.runtime.RuntimeOptions;
 import cucumber.runtime.io.MultiLoader;
 import cucumber.runtime.io.ResourceLoader;
 import cucumber.runtime.io.ResourceLoaderClassFinder;
-import net.serenitybdd.cucumber.CucumberWithSerenity;
-import net.serenitybdd.cucumber.CucumberWithSerenityRuntime;
+import cucumber.runtime.CucumberWithSerenity;
+import cucumber.runtime.CucumberWithSerenityRuntime;
 
 import java.io.IOException;
 import java.util.Arrays;

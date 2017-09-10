@@ -1,7 +1,7 @@
 package net.serenitybdd.cucumber.model;
 
 import com.google.common.base.Joiner;
-import net.serenitybdd.cucumber.CucumberWithSerenity;
+import cucumber.runtime.CucumberWithSerenity;
 
 import java.io.File;
 import java.io.IOException;

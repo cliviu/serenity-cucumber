@@ -1,8 +1,5 @@
-package net.serenitybdd.cucumber;
+package cucumber.runtime;
 
-import cucumber.runtime.ClassFinder;
-import cucumber.runtime.Runtime;
-import cucumber.runtime.RuntimeOptions;
 import cucumber.runtime.formatter.SerenityReporter;
 import cucumber.runtime.io.ResourceLoader;
 import cucumber.runtime.io.ResourceLoaderClassFinder;

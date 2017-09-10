@@ -1,11 +1,7 @@
-package net.serenitybdd.cucumber;
+package cucumber.runtime;
 
 import com.google.common.base.Splitter;
 import cucumber.api.junit.Cucumber;
-import cucumber.runtime.ClassFinder;
-import cucumber.runtime.Runtime;
-import cucumber.runtime.RuntimeOptions;
-import cucumber.runtime.RuntimeOptionsFactory;
 import cucumber.runtime.formatter.SerenityReporter;
 import cucumber.runtime.io.ResourceLoader;
 import cucumber.runtime.io.ResourceLoaderClassFinder;
@@ -54,6 +50,7 @@ public class CucumberWithSerenity extends Cucumber {
                                                      RuntimeOptions runtimeOptions) throws InitializationError, IOException {
         runtimeOptions.getTagFilters().addAll(environmentSpecifiedTags(runtimeOptions.getTagFilters()));
         RUNTIME_OPTIONS.set(runtimeOptions);
+        System.out.println("XXX Created runtime " + runtimeOptions);
         return CucumberWithSerenityRuntime.using(resourceLoader, classLoader, runtimeOptions);
     }
 
@@ -79,9 +76,11 @@ public class CucumberWithSerenity extends Cucumber {
                                                        Configuration systemConfiguration) {
         ClassFinder classFinder = new ResourceLoaderClassFinder(resourceLoader, classLoader);
         SerenityReporter reporter = new SerenityReporter(systemConfiguration);
-        runtimeOptions.addPlugin(reporter);
         RUNTIME_OPTIONS.set(runtimeOptions);
-        return new Runtime(resourceLoader, classFinder, classLoader, runtimeOptions);
+        Runtime runtime = new Runtime(resourceLoader, classFinder, classLoader, runtimeOptions);
+        //the order here is important, add plugin after the runtime is created
+        runtimeOptions.addPlugin(reporter);
+        return runtime;
     }
 
     public static List<String> getFeaturePaths() {

@@ -4,7 +4,7 @@ import cucumber.runtime.Runtime;
 import cucumber.runtime.RuntimeOptions;
 import cucumber.runtime.io.MultiLoader;
 import cucumber.runtime.io.ResourceLoader;
-import net.serenitybdd.cucumber.CucumberWithSerenity;
+import cucumber.runtime.CucumberWithSerenity;
 import net.thucydides.core.guice.Injectors;
 import net.thucydides.core.webdriver.Configuration;
 
