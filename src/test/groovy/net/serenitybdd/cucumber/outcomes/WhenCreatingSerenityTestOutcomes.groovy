@@ -181,7 +181,7 @@ Feature: A simple feature with tags
         def testOutcome = recordedTestOutcomes[0]
 
         then:
-        testOutcome.userStory.narrative == "This is about selling widgets"
+        testOutcome.userStory.narrative == " This is about selling widgets"
     }
 
     def "should record the scenario description text for a scenario"() {
