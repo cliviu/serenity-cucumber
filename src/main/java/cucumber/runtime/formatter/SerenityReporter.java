@@ -228,10 +228,10 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                 startOfScenarioLifeCycle((Scenario)scenarioDefinition);
             } else if(scenarioDefinition instanceof ScenarioOutline)  {
                 former_scenarioOutline((ScenarioOutline)scenarioDefinition);
+                examples(feature.getName() + ";" + ((ScenarioOutline) scenarioDefinition).getName(), ((ScenarioOutline) scenarioDefinition).getExamples().get(0));
+                startOfScenarioOutlineLifeCycle((ScenarioOutline) scenarioDefinition);
             }
-
         }
-
     }
 
     private Map<String, Object> createFeatureMap(TestCase testCase) {
@@ -260,6 +260,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             ScenarioDefinition scenarioDefinition = TestSourcesModel.getScenarioDefinition(astNode);
             testCaseMap.put("keyword", scenarioDefinition.getKeyword());
             testCaseMap.put("description", scenarioDefinition.getDescription() != null ? scenarioDefinition.getDescription() : "");
+            testCaseMap.put("scenarioDefinition", scenarioDefinition);
         }
         testCaseMap.put("steps", new ArrayList<Map<String, Object>>());
         if (!testCase.getTags().isEmpty()) {
@@ -309,6 +310,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             if (argument instanceof PickleString) {
                 stepMap.put("doc_string", createDocStringMap(argument));
             } else if (argument instanceof PickleTable) {
+                //former_examples(testStep.getStepText(), (PickleTable)argument);
                 stepMap.put("rows", createDataTableList(argument));
             }
         }
@@ -479,8 +481,13 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void finishReport(TestRunFinished event) {
-        //TODO
-        //checkForLifecycleTags(scenario);
+        System.out.println("XXX FinishedReport1 " + event);
+        ScenarioDefinition scenarioDefinition = (ScenarioDefinition)currentTestCaseMap.get("scenarioDefinition");
+        if(scenarioDefinition != null && scenarioDefinition instanceof Scenario) {
+            //TODO
+            System.out.println("XXX FinishedReport " + scenarioDefinition);
+            checkForLifecycleTags((Scenario)scenarioDefinition);
+        }
         updateTestResultsFromTags();
         if (examplesRunning) {
             finishExample();
@@ -683,13 +690,82 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     String currentScenarioId;
 
 
-    public void former_examples(Examples examples) {
-
-       /* scenarioOutlineEndsAt = examples.getLine() - 1;
+    public void examples(String id,Examples examples) {
+        System.out.println("XXX Examples called");
+        Thread.dumpStack();
+        /*String scenarioOutline = featureFileContents.betweenLine(scenarioOutlineStartsAt)
+                .and(examples.getLine() - 1);*/
 
         addingScenarioOutlineSteps = false;
         reinitializeExamples();
-        List<ExamplesTableRow> examplesTableRows = examples.getRows();
+        List<TableRow> examplesTableRows = examples.getTableBody();
+        List<String> headers = getHeadersFrom(examples.getTableHeader());
+        List<Map<String, String>> rows = getValuesFrom(examplesTableRows, headers);
+
+        for (int i = 1; i < examplesTableRows.size(); i++) {
+            addRow(exampleRows, headers, examplesTableRows.get(i));
+        }
+
+        System.out.println(" Outline id " + id);
+        String scenarioId = scenarioIdFrom(id);
+        boolean newScenario = !scenarioId.equals(currentScenarioId);
+        System.out.println(" ExName " + examples.getName());
+        System.out.println(" ScenarioId " + scenarioId + " vs " + currentScenarioId);
+        System.out.println(" newScenario " + newScenario );
+
+        table = (newScenario) ?
+                thucydidesTableFrom(SCENARIO_OUTLINE_NOT_KNOWN_YET, headers, rows, examples.getName(), examples.getDescription())
+                : addTableRowsTo(table, headers, rows, examples.getName(), examples.getDescription());
+        System.out.println(" table " + table );
+        exampleCount = examples.getTableBody().size() - 1;
+
+        currentScenarioId = scenarioId;
+    }
+
+
+    private List<String> getHeadersFrom(TableRow headerRow) {
+        return headerRow.getCells().stream().map(TableCell::getValue).collect(Collectors.toList());
+    }
+
+    private List<Map<String, String>> getValuesFrom(List<TableRow> examplesTableRows, List<String> headers) {
+
+        List<Map<String, String>> rows = Lists.newArrayList();
+
+        for (int row = 1; row < examplesTableRows.size(); row++) {
+            Map<String, String> rowValues = Maps.newLinkedHashMap();
+            int column = 0;
+            List<String> cells = examplesTableRows.get(row).getCells().stream().map(TableCell::getValue).collect(Collectors.toList());
+            for (String cellValue : cells) {
+                String columnName = headers.get(column++);
+                rowValues.put(columnName, cellValue);
+            }
+            rows.add(rowValues);
+        }
+        return rows;
+    }
+
+    private void addRow(List<Map<String, String>> exampleRows,
+                        List<String> headers,
+                        TableRow currentTableRow) {
+        Map<String, String> row = new LinkedHashMap<>();
+        for (int j = 0; j < headers.size(); j++) {
+            List<String> cells = currentTableRow.getCells().stream().map(TableCell::getValue).collect(Collectors.toList());
+            row.put(headers.get(j), cells.get(j));
+        }
+        exampleRows.add(row);
+    }
+
+
+
+    //public void former_examples(Examples examples) {
+    /*public void former_examples(String testId,PickleTable examples) {
+
+        scenarioOutlineEndsAt = examples.getLocation().getLine() - 1;
+
+        addingScenarioOutlineSteps = false;
+        reinitializeExamples();
+        //List<ExamplesTableRow> examplesTableRows = examples.getRows();
+        List<PickleRow> examplesTableRows = examples.getRows();
         List<String> headers = getHeadersFrom(examplesTableRows);
         List<Map<String, String>> rows = getValuesFrom(examplesTableRows, headers);
 
@@ -697,16 +773,17 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             addRow(exampleRows, headers, examplesTableRows.get(i));
         }
 
-        String scenarioId = scenarioIdFrom(examples.getId());
+        //String scenarioId = scenarioIdFrom(examples.getId());
+        String scenarioId = scenarioIdFrom(testId);
         boolean newScenario = !scenarioId.equals(currentScenarioId);
 
         table = (newScenario) ?
-                thucydidesTableFrom(SCENARIO_OUTLINE_NOT_KNOWN_YET, headers, rows, examples.getName(), examples.getDescription())
-                : addTableRowsTo(table, headers, rows, examples.getName(), examples.getDescription());
+                thucydidesTableFrom(SCENARIO_OUTLINE_NOT_KNOWN_YET, headers, rows, testId, testId)
+                : addTableRowsTo(table, headers, rows, testId, testId);
         exampleCount = examples.getRows().size() - 1;
 
-        currentScenarioId = scenarioId;*/
-    }
+        currentScenarioId = scenarioId;
+    }*/
 
     private String scenarioIdFrom(String scenarioIdOrExampleId) {
         String[] idElements = scenarioIdOrExampleId.split(";");
@@ -719,20 +796,21 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         exampleRows = new ArrayList<>();
     }
 
-
-   /*private List<String> getHeadersFrom(List<ExamplesTableRow> examplesTableRows) {
-        ExamplesTableRow headerRow = examplesTableRows.get(0);
-        return headerRow.getCells();
+    /*private List<String> getHeadersFrom(List<PickleRow> examplesTableRows) {
+        PickleRow headerRow = examplesTableRows.get(0);
+        List<PickleCell> cells = headerRow.getCells();
+        return cells.stream().map(PickleCell::getValue).collect(Collectors.toList());
     }
 
-    private List<Map<String, String>> getValuesFrom(List<ExamplesTableRow> examplesTableRows, List<String> headers) {
+    private List<Map<String, String>> getValuesFrom(List<PickleRow> examplesTableRows, List<String> headers) {
 
         List<Map<String, String>> rows = Lists.newArrayList();
 
         for (int row = 1; row < examplesTableRows.size(); row++) {
             Map<String, String> rowValues = Maps.newLinkedHashMap();
             int column = 0;
-            for (String cellValue : examplesTableRows.get(row).getCells()) {
+            List<String> cells = examplesTableRows.get(row).getCells().stream().map(PickleCell::getValue).collect(Collectors.toList());
+            for (String cellValue : cells) {
                 String columnName = headers.get(column++);
                 rowValues.put(columnName, cellValue);
             }
@@ -743,10 +821,11 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private void addRow(List<Map<String, String>> exampleRows,
                         List<String> headers,
-                        ExamplesTableRow currentTableRow) {
+                        PickleRow currentTableRow) {
         Map<String, String> row = new LinkedHashMap<>();
         for (int j = 0; j < headers.size(); j++) {
-            row.put(headers.get(j), currentTableRow.getCells().get(j));
+            List<String> cells = currentTableRow.getCells().stream().map(PickleCell::getValue).collect(Collectors.toList());
+            row.put(headers.get(j), cells.get(j));
         }
         exampleRows.add(row);
     }*/
@@ -782,11 +861,28 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     String currentScenario;
 
 
-    public void startOfScenarioLifeCycle(Scenario scenario) {
+    private void startOfScenarioLifeCycle(Scenario scenario) {
 
         boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName())).equals(currentScenario);
         currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName()));
+        if (examplesRunning) {
 
+            if (newScenario) {
+                startScenario(scenario);
+                StepEventBus.getEventBus().useExamplesFrom(table);
+            } else {
+                StepEventBus.getEventBus().addNewExamplesFrom(table);
+            }
+            startExample();
+        } else {
+            startScenario(scenario);
+        }
+    }
+
+    private void startOfScenarioOutlineLifeCycle(ScenarioOutline scenario) {
+
+        boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName())).equals(currentScenario);
+        currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName()));
         if (examplesRunning) {
 
             if (newScenario) {
@@ -817,7 +913,33 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         updateTestResultsFromTags();
     }
 
+    private void startScenario(ScenarioOutline scenario) {
+        clearScenarioResult();
+        StepEventBus.getEventBus().setTestSource(StepEventBus.TEST_SOURCE_CUCUMBER);
+        StepEventBus.getEventBus().testStarted(scenario.getName(), TestSourcesModel.convertToId(scenario.getName()));
+        StepEventBus.getEventBus().addDescriptionToCurrentTest(scenario.getDescription());
+        StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(currentFeature.getTags()));
+        StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(scenario.getTags()));
+
+        registerFeatureJiraIssues(currentFeature.getTags());
+        registerScenarioJiraIssues(scenario.getTags());
+
+        checkForLifecycleTags(scenario);
+        updateTestResultsFromTags();
+    }
+
     private void checkForLifecycleTags(Scenario scenario) {
+        checkForSkipped(currentFeature);
+        checkForIgnored(currentFeature);
+        checkForPending(currentFeature);
+        checkForManual(currentFeature);
+        checkForPendingScenario(scenario.getTags());
+        checkForSkippedScenario(scenario.getTags());
+        checkForIgnoredScenario(scenario.getTags());
+        checkForManualScenario(scenario.getTags());
+    }
+
+    private void checkForLifecycleTags(ScenarioOutline scenario) {
         checkForSkipped(currentFeature);
         checkForIgnored(currentFeature);
         checkForPending(currentFeature);
@@ -968,6 +1090,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             StepEventBus.getEventBus().clear();
             Serenity.done();
             table = null;
+            currentScenarioId = null;
         }
     }
 
