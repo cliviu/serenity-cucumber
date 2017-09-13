@@ -278,7 +278,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, testCase.getLine());
         if (astNode != null) {
             Background background = TestSourcesModel.getBackgoundForTestCase(astNode);
-            former_background(background);
+            //TODO
+         //   former_background(background);
             Map<String, Object> testCaseMap = new HashMap<String, Object>();
             testCaseMap.put("name", background.getName());
             testCaseMap.put("line", background.getLocation().getLine());
@@ -471,13 +472,29 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestStepFinished(TestStepFinished event) {
-        System.out.println("TestStepFinished " + event.testStep/*.getStepText()*/);
+        System.out.println("TestStepFinished " + ((event.testStep instanceof PickleTestStep) ? event.testStep.getStepText(): event.testStep) + " result " + event.result.getStatus());
         currentStepOrHookMap.put("match", createMatchMap(event.testStep, event.result));
         currentStepOrHookMap.put("result", createResultMap(event.result));
+
         //TODO
-        if(event.testStep instanceof PickleTestStep) {
+        //if(event.testStep instanceof PickleTestStep) {
             handleResult(event.result);
+        //}
+
+        if (examplesRunning) {
+            finishExample();
         }
+
+
+        /*if (examplesRunning) {
+            //finishExample();
+            StepEventBus.getEventBus().exampleFinished();
+            exampleCount--;
+            System.out.println("StepFinished XXXExample count " + exampleCount);
+            if (exampleCount == 0) {
+                examplesRunning = false;
+            }
+        } */
     }
 
     private void finishReport(TestRunFinished event) {
@@ -489,9 +506,12 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             checkForLifecycleTags((Scenario)scenarioDefinition);
         }
         updateTestResultsFromTags();
-        if (examplesRunning) {
+        /*if (examplesRunning) {
             finishExample();
         } else {
+            generateReports();
+        } */
+        if(!examplesRunning) {
             generateReports();
         }
         former_done();
@@ -702,7 +722,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         List<String> headers = getHeadersFrom(examples.getTableHeader());
         List<Map<String, String>> rows = getValuesFrom(examplesTableRows, headers);
 
-        for (int i = 1; i < examplesTableRows.size(); i++) {
+        for (int i = 0; i < examplesTableRows.size(); i++) {
             addRow(exampleRows, headers, examplesTableRows.get(i));
         }
 
@@ -716,8 +736,9 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         table = (newScenario) ?
                 thucydidesTableFrom(SCENARIO_OUTLINE_NOT_KNOWN_YET, headers, rows, examples.getName(), examples.getDescription())
                 : addTableRowsTo(table, headers, rows, examples.getName(), examples.getDescription());
-        System.out.println(" table " + table );
-        exampleCount = examples.getTableBody().size() - 1;
+        System.out.println(" XXXtable " + table.getRows().size() );
+        exampleCount = examples.getTableBody().size();
+        System.out.println(" XXXExample count  " + exampleCount );
 
         currentScenarioId = scenarioId;
     }
@@ -731,7 +752,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
         List<Map<String, String>> rows = Lists.newArrayList();
 
-        for (int row = 1; row < examplesTableRows.size(); row++) {
+        for (int row = 0; row < examplesTableRows.size(); row++) {
             Map<String, String> rowValues = Maps.newLinkedHashMap();
             int column = 0;
             List<String> cells = examplesTableRows.get(row).getCells().stream().map(TableCell::getValue).collect(Collectors.toList());
@@ -881,12 +902,14 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private void startOfScenarioOutlineLifeCycle(ScenarioOutline scenario) {
 
+        System.out.println("XXXstartofScenarioOutlineLifeCycle " + scenario);
         boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName())).equals(currentScenario);
         currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName()));
         if (examplesRunning) {
 
             if (newScenario) {
                 startScenario(scenario);
+                System.out.println("XXXstartofScenarioOutlineLifeCycle useexamples from " + table );
                 StepEventBus.getEventBus().useExamplesFrom(table);
             } else {
                 StepEventBus.getEventBus().addNewExamplesFrom(table);
@@ -1024,6 +1047,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }*/
 
     private void startExample() {
+        System.out.println("XXXStartExample ");
         Map<String, String> data = exampleRows.get(currentExample);
         StepEventBus.getEventBus().clearStepFailures();
         StepEventBus.getEventBus().exampleStarted(data);
@@ -1033,6 +1057,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     private void finishExample() {
         StepEventBus.getEventBus().exampleFinished();
         exampleCount--;
+        System.out.println("XXXExample count is " + exampleCount);
         if (exampleCount == 0) {
             examplesRunning = false;
 
@@ -1041,7 +1066,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                     .and(scenarioOutlineEndsAt);
 
             table.setScenarioOutline(scenarioOutline);
-
+            System.out.println("XXXExample setscenariooutline " + scenarioOutline);
             generateReports();
         } else {
             examplesRunning = true;
@@ -1104,7 +1129,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
 
     public void handleResult(Result result) {
-        System.out.println("XXXResult " + result.getStatus());
+        System.out.println("TestStepFinishedhandleResult " + result.getStatus());
         Step currentStep = stepQueue.poll();
         TestStep currentTestStep = testStepQueue.poll();
         if (Result.Type.PASSED.equals(result.getStatus())) {
@@ -1244,8 +1269,9 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     
 
     private synchronized void generateReports() {
-        System.out.println("XXX Generate reports");
+        System.out.println("XXXExample generate reports for outcomes " + getAllTestOutcomes().size() + " result is "  + getAllTestOutcomes().get(0).getResult());
         getReportService().generateReportsFor(getAllTestOutcomes());
+
     }
 
     public List<TestOutcome> getAllTestOutcomes() {
