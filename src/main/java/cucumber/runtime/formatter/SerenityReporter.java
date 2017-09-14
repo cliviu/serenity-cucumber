@@ -142,7 +142,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     private EventHandler<TestRunFinished> runFinishedHandler = new EventHandler<TestRunFinished>() {
         @Override
         public void receive(TestRunFinished event) {
-            finishReport(event);
+            handleTestRunFinished(event);
         }
     };
     private EventHandler<WriteEvent> writeEventhandler = new EventHandler<WriteEvent>() {
@@ -261,6 +261,9 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         System.out.println("Astnode1 " + astNode1);
 
         if (astNode != null) {
+
+
+
             ScenarioDefinition scenarioDefinition = TestSourcesModel.getScenarioDefinition(astNode);
             System.out.println("XXXScenarioDefinition " + scenarioDefinition.getName()); 
             boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName())).equals(currentScenario);
@@ -278,6 +281,10 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                 }
                 currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName()));
             }
+            Background background = TestSourcesModel.getBackgoundForTestCase(astNode);
+            if(background != null) {
+                former_background(background);
+            }
         }
     }
 
@@ -289,6 +296,19 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         /*if(event.testStep instanceof PickleTestStep) {
            handleResult(event.result);
         } */
+        //if(examplesRunning) {
+            Map<String, Object> map = (Map<String,Object>)currentStepOrHookMap.get("result");
+            handleResult((Result)map.get("result"));
+            //handleResult(stepQueue.poll());
+        //}
+
+            if (examplesRunning) { //finish enclosing step because testFinished resets the queue
+                StepEventBus.getEventBus().stepFinished();
+            }
+            updatePendingResults();
+            updateSkippedResults();
+            StepEventBus.getEventBus().testFinished();
+            stepQueue.clear();
 
         if (examplesRunning) {
             finishExample();
@@ -341,7 +361,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         if (astNode != null) {
             Background background = TestSourcesModel.getBackgoundForTestCase(astNode);
             //TODO
-         //   former_background(background);
+            //former_background(background);
             Map<String, Object> testCaseMap = new HashMap<String, Object>();
             testCaseMap.put("name", background.getName());
             testCaseMap.put("line", background.getLocation().getLine());
@@ -468,7 +488,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private Map<String, Object> createResultMap(Result result) {
         Map<String, Object> resultMap = new HashMap<String, Object>();
-        resultMap.put("status", result.getStatus().lowerCaseName());
+        resultMap.put("result", result);
         if (result.getErrorMessage() != null) {
             resultMap.put("error_message", result.getErrorMessage());
         }
@@ -542,11 +562,14 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         currentStepOrHookMap.put("match", createMatchMap(event.testStep, event.result));
         currentStepOrHookMap.put("result", createResultMap(event.result));
 
-        //TODO
-
         if(event.testStep instanceof PickleTestStep) {
-            handleResult(event.result);
-        } 
+            if (examplesRunning) {
+
+            } else {
+                handleResult(event.result);
+            }
+        }
+
 
         /*if (examplesRunning) {
             finishExample();
@@ -564,7 +587,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         } */
     }
 
-    private void finishReport(TestRunFinished event) {
+    private void handleTestRunFinished(TestRunFinished event) {
+
         System.out.println("XXX FinishedReport1 " + event);
         ScenarioDefinition scenarioDefinition = (ScenarioDefinition)currentTestCaseMap.get("scenarioDefinition");
         if(scenarioDefinition != null && scenarioDefinition instanceof Scenario) {
@@ -573,6 +597,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             checkForLifecycleTags((Scenario)scenarioDefinition);
         }
         updateTestResultsFromTags();
+
         /*if (examplesRunning) {
             finishExample();
         } else {
