@@ -261,9 +261,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         System.out.println("Astnode1 " + astNode1);
 
         if (astNode != null) {
-
-
-
             ScenarioDefinition scenarioDefinition = TestSourcesModel.getScenarioDefinition(astNode);
             System.out.println("XXXScenarioDefinition " + scenarioDefinition.getName()); 
             boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName())).equals(currentScenario);
@@ -280,6 +277,10 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                     startOfScenarioOutlineLifeCycle((ScenarioOutline) scenarioDefinition);
                 }
                 currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName()));
+            } else {
+                if (scenarioDefinition instanceof ScenarioOutline) {
+                    startExample();
+                }
             }
             Background background = TestSourcesModel.getBackgoundForTestCase(astNode);
             if(background != null) {
@@ -292,19 +293,19 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         System.out.println("HandleTestCaseFinished " + event.testCase);
         //TODO
 
-        //handleResult(event.result);
+        handleResult(event.result);
         /*if(event.testStep instanceof PickleTestStep) {
            handleResult(event.result);
         } */
         //if(examplesRunning) {
-            Map<String, Object> map = (Map<String,Object>)currentStepOrHookMap.get("result");
-            handleResult((Result)map.get("result"));
+       //     Map<String, Object> map = (Map<String,Object>)currentStepOrHookMap.get("result");
+//            handleResult((Result)map.get("result"));
             //handleResult(stepQueue.poll());
         //}
 
-            if (examplesRunning) { //finish enclosing step because testFinished resets the queue
-                StepEventBus.getEventBus().stepFinished();
-            }
+            //if (examplesRunning) { //finish enclosing step because testFinished resets the queue
+              //  StepEventBus.getEventBus().stepFinished();
+            //}
             updatePendingResults();
             updateSkippedResults();
             StepEventBus.getEventBus().testFinished();
@@ -498,7 +499,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         return resultMap;
     }
 
-    private void handleTestStepStarted(TestStepStarted event) {
+    private synchronized void handleTestStepStarted(TestStepStarted event) {
         if (!event.testStep.isHook()) {
             if (isFirstStepAfterBackground(event.testStep)) {
                 currentElementMap = currentTestCaseMap;
@@ -536,6 +537,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private void handleMatch(TestStep testStep) {
 
+            System.out.println("HandleMatch " + testStep.getPattern());
         //if (match instanceof StepDefinitionMatch) {
             Step currentStep = stepQueue.peek();
             String stepTitle = stepTitleFrom(currentStep,testStep);
@@ -557,17 +559,13 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         //addEmbeddingToHookMap(event.data, event.mimeType);
     }
 
-    private void handleTestStepFinished(TestStepFinished event) {
+    private synchronized void handleTestStepFinished(TestStepFinished event) {
         System.out.println("TestStepFinished " + ((event.testStep instanceof PickleTestStep) ? event.testStep.getStepText(): event.testStep) + " result " + event.result.getStatus());
         currentStepOrHookMap.put("match", createMatchMap(event.testStep, event.result));
         currentStepOrHookMap.put("result", createResultMap(event.result));
 
         if(event.testStep instanceof PickleTestStep) {
-            if (examplesRunning) {
-
-            } else {
-                handleResult(event.result);
-            }
+            handleResult(event.result);
         }
 
 
@@ -803,20 +801,22 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
 
     public void examples(String id,List<Examples> examplesList) {
-        System.out.println("XXX Examples called");
+        System.out.println("XXX Examples called " + examplesList.size());
         Thread.dumpStack();
         /*String scenarioOutline = featureFileContents.betweenLine(scenarioOutlineStartsAt)
                 .and(examples.getLine() - 1);*/
 
         addingScenarioOutlineSteps = false;
+        reinitializeExamples();
         for(Examples examples : examplesList) {
-            reinitializeExamples();
+            //reinitializeExamples();
             List<TableRow> examplesTableRows = examples.getTableBody();
             List<String> headers = getHeadersFrom(examples.getTableHeader());
             List<Map<String, String>> rows = getValuesFrom(examplesTableRows, headers);
 
             for (int i = 0; i < examplesTableRows.size(); i++) {
                 addRow(exampleRows, headers, examplesTableRows.get(i));
+
             }
 
             System.out.println(" Outline id " + id);
@@ -869,6 +869,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             row.put(headers.get(j), cells.get(j));
         }
         exampleRows.add(row);
+        System.out.println("XXxAddrow " + row + " # " + exampleRows.size());
     }
 
 
@@ -1149,7 +1150,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }*/
 
     private void startExample() {
-        System.out.println("XXXStartExample ");
+        System.out.println("XXXStartExample " + exampleRows.size());
         Map<String, String> data = exampleRows.get(currentExample);
         StepEventBus.getEventBus().clearStepFailures();
         StepEventBus.getEventBus().exampleStarted(data);
@@ -1252,11 +1253,11 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                 waitingToProcessBackgroundSteps = false;
             } else {
                 if (examplesRunning) { //finish enclosing step because testFinished resets the queue
-                    StepEventBus.getEventBus().stepFinished();
+                //    StepEventBus.getEventBus().stepFinished();
                 }
                 updatePendingResults();
                 updateSkippedResults();
-                StepEventBus.getEventBus().testFinished();
+                //StepEventBus.getEventBus().testFinished();
             }
         }
     }
@@ -1319,7 +1320,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                 //TODO get Name
                 + testStep.getPickleStep().getText()
                  + embeddedTableDataIn(testStep);
-        return null;
+        return " ";
     }
 
     private String embeddedTableDataIn(TestStep currentStep) {
