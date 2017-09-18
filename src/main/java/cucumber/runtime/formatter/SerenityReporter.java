@@ -12,6 +12,7 @@ import cucumber.api.TestStep;
 import cucumber.api.event.*;
 import cucumber.api.formatter.Formatter;
 import cucumber.runner.PickleTestStep;
+import cucumber.runner.UnskipableStep;
 import cucumber.runtime.Match;
 import gherkin.ast.*;
 import gherkin.pickles.*;
@@ -271,6 +272,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                     former_scenario((Scenario) scenarioDefinition);
                     startOfScenarioLifeCycle((Scenario) scenarioDefinition);
                 } else if (scenarioDefinition instanceof ScenarioOutline) {
+                    examplesRunning = true;
                     former_scenarioOutline((ScenarioOutline) scenarioDefinition);
                     System.out.println("Number of examples " + ((ScenarioOutline) scenarioDefinition).getExamples().size());
                     examples(currentFeature.getName() + ";" + ((ScenarioOutline) scenarioDefinition).getName(), ((ScenarioOutline) scenarioDefinition).getExamples());
@@ -290,9 +292,11 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestCaseFinished(TestCaseFinished event) {
-        System.out.println("HandleTestCaseFinished " + event.testCase);
+        System.out.println("HandleTestCaseFinished " + event.testCase.getName());
         //TODO
-
+        /*if(examplesRunning) {
+            finishExample_new();
+        } */
         handleResult(event.result);
         /*if(event.testStep instanceof PickleTestStep) {
            handleResult(event.result);
@@ -306,15 +310,15 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             //if (examplesRunning) { //finish enclosing step because testFinished resets the queue
               //  StepEventBus.getEventBus().stepFinished();
             //}
-            updatePendingResults();
-            updateSkippedResults();
-            StepEventBus.getEventBus().testFinished();
-            stepQueue.clear();
+        updatePendingResults();
+        updateSkippedResults();
+        StepEventBus.getEventBus().testFinished();
+        stepQueue.clear();
 
         if (examplesRunning) {
             finishExample();
         }
-
+        
     }
 
     private Map<String, Object> createFeatureMap(TestCase testCase) {
@@ -566,6 +570,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
         if(event.testStep instanceof PickleTestStep) {
             handleResult(event.result);
+        } else if(event.testStep instanceof UnskipableStep){
+            System.out.println("XXXUnskippableTestEvent " + event.result.getStatus() + " " + event.testStep + " is hook " + ((UnskipableStep)event.testStep).getHookType());
         }
 
 
@@ -596,14 +602,14 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         }
         updateTestResultsFromTags();
 
-        /*if (examplesRunning) {
+        if (examplesRunning) {
             finishExample();
         } else {
             generateReports();
-        } */
-        if(!examplesRunning) {
-            generateReports();
-        }
+        } 
+        //if(!examplesRunning) {
+        //    generateReports();
+        //}
         former_done();
     }
 
@@ -831,8 +837,9 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                     : addTableRowsTo(table, headers, rows, trim(examples.getName()), trim(examples.getDescription()));
             //System.out.println("Examples description " + examples.getDescription() + " " + examples.getDescription().length());
             //System.out.println("Examples description trim " + examples.getDescription().trim( + " " +  examples.getDescription().trim().length());
-            System.out.println(" XXXtable " + table.getRows().size());
-            exampleCount = examples.getTableBody().size();
+            System.out.println(table.hashCode() + " XXXtable " + table.getRows().size());
+            //exampleCount = examples.getTableBody().size();
+            exampleCount = table.getSize();
             System.out.println(" XXXExample count  " + exampleCount);
             currentScenarioId = scenarioId;
         }
@@ -1150,8 +1157,9 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }*/
 
     private void startExample() {
-        System.out.println("XXXStartExample " + exampleRows.size());
+
         Map<String, String> data = exampleRows.get(currentExample);
+        System.out.println("XXXExampleStart " + exampleRows.size() + " # " + currentExample + " data "  + data);
         StepEventBus.getEventBus().clearStepFailures();
         StepEventBus.getEventBus().exampleStarted(data);
         currentExample++;
@@ -1160,6 +1168,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     private void finishExample() {
         StepEventBus.getEventBus().exampleFinished();
         exampleCount--;
+        Map<String, String> data = exampleRows.get(currentExample -1);
+        System.out.println("XXXExampleFinish " + exampleRows.size() + " # " + currentExample + " data "  + data);
         System.out.println("XXXExample count is " + exampleCount);
         if (exampleCount == 0) {
             examplesRunning = false;
@@ -1174,6 +1184,12 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         } else {
             examplesRunning = true;
         }
+    }
+
+    private void finishExample_new() {
+        StepEventBus.getEventBus().exampleFinished();
+        table.setScenarioOutline("scenarioOutline");
+        generateReports();
     }
 
     //@Override
@@ -1253,7 +1269,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                 waitingToProcessBackgroundSteps = false;
             } else {
                 if (examplesRunning) { //finish enclosing step because testFinished resets the queue
-                //    StepEventBus.getEventBus().stepFinished();
+                   // StepEventBus.getEventBus().stepFinished();
                 }
                 updatePendingResults();
                 updateSkippedResults();
