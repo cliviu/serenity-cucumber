@@ -976,7 +976,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         for (Map<String, String> row : rows) {
             table.appendRow(rowValuesFrom(headers, row));
         }
-        table.nextRow();
         return table;
     }
 
