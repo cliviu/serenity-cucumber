@@ -59,7 +59,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     private static final String OPEN_PARAM_CHAR = "\uff5f";
     private static final String CLOSE_PARAM_CHAR = "\uff60";
 
-    public static final String PENDING_STATUS = "pending";
     private static final String SCENARIO_OUTLINE_NOT_KNOWN_YET = "";
 
     private final Queue<Step> stepQueue;
@@ -1254,11 +1253,12 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             StepEventBus.getEventBus().stepFinished();
         } else if (Result.Type.FAILED.equals(result.getStatus())) {
             failed(stepTitleFrom(currentStep,currentTestStep), result.getError());
-        } else if (Result.SKIPPED.equals(result)) {
+        } else if (Result.Type.SKIPPED.equals(result.getStatus())) {
+            System.out.println("TestStepFinishedhandleResult IGNORED");
             StepEventBus.getEventBus().stepIgnored();
-        } else if (PENDING_STATUS.equals(result.getStatus())) {
+        } else if (Result.Type.PENDING.equals(result.getStatus())) {
             StepEventBus.getEventBus().stepPending();
-        } else if (Result.UNDEFINED.equals(result)) {
+        } else if (Result.Type.UNDEFINED.equals(result.getStatus())) {
             StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitleFrom(currentStep,currentTestStep)));
             StepEventBus.getEventBus().stepPending();
         }
@@ -1278,7 +1278,9 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void updatePendingResults() {
+        System.out.println("XXXUpdatePendingResults");
         if (isPendingStory()) {
+            System.out.println("XXXUpdatePendingResultssetallstepsPending");
             StepEventBus.getEventBus().setAllStepsTo(TestResult.PENDING);
         }
     }
