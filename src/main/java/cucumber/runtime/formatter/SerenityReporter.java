@@ -1156,8 +1156,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private void startExample() {
 
+        System.out.println("XXXExampleStart " + exampleRows.size() + " # " + currentExample);
         Map<String, String> data = exampleRows.get(currentExample);
-        System.out.println("XXXExampleStart " + exampleRows.size() + " # " + currentExample + " data "  + data);
         StepEventBus.getEventBus().clearStepFailures();
         StepEventBus.getEventBus().exampleStarted(data);
         currentExample++;
