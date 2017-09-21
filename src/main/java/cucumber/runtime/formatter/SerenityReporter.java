@@ -173,7 +173,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestSourceRead(TestSourceRead event) {
-        System.out.println("XXX handle TestSourceRead");
+        System.out.println("XXX handle TestSourceRead " + event.uri);
         testSources.addTestSourceReadEvent(event.uri, event);
         String uri = event.uri;
         currentUri = uri;
@@ -262,10 +262,11 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
         if (astNode != null) {
             ScenarioDefinition scenarioDefinition = TestSourcesModel.getScenarioDefinition(astNode);
-            System.out.println("XXXScenarioDefinition " + scenarioDefinition.getName()); 
-            boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName())).equals(currentScenario);
-
-            System.out.println("XXXScenarioDefinitionnewScenario " + currentScenario + " " + newScenario);
+            System.out.println("XXXScenarioDefinition " + scenarioDefinition.getName() + " currentscenario " + currentScenario);
+            //add test case uri to scenario id because the sources are read in parallel, current feature cannot be used 
+            String scenarioId =  event.testCase.getUri() + " "  + scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName()));
+            boolean newScenario = !scenarioId.equals(currentScenario);
+            System.out.println("XXXScenarioDefinitionnewScenario " + currentScenario + " " + newScenario + " scenarioId " + scenarioId);
             if(newScenario) {
                 if (scenarioDefinition instanceof Scenario) {
                     former_scenario((Scenario) scenarioDefinition);
@@ -277,7 +278,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                     examples(currentFeature.getName() + ";" + ((ScenarioOutline) scenarioDefinition).getName(), ((ScenarioOutline) scenarioDefinition).getExamples());
                     startOfScenarioOutlineLifeCycle((ScenarioOutline) scenarioDefinition);
                 }
-                currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName()));
+                currentScenario = event.testCase.getUri() + " " + scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName()));
             } else {
                 if (scenarioDefinition instanceof ScenarioOutline) {
                     startExample();
@@ -915,7 +916,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private String scenarioIdFrom(String scenarioIdOrExampleId) {
         //String[] idElements = scenarioIdOrExampleId.split(";");
-        return (scenarioIdOrExampleId != null) ? scenarioIdOrExampleId : defaultFeatureId ;
+        return (scenarioIdOrExampleId != null) ?  scenarioIdOrExampleId : defaultFeatureId ;
     }
 
     private void reinitializeExamples() {
@@ -1155,9 +1156,10 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }*/
 
     private void startExample() {
-
-        System.out.println("XXXExampleStart " + exampleRows.size() + " # " + currentExample);
+        //System.out.println("XXXExampleStart " + exampleRows.size() + " # " + currentExample);
+        Thread.dumpStack();
         Map<String, String> data = exampleRows.get(currentExample);
+        System.out.println("XXXExampleStart " + exampleRows.size() + " # " + currentExample + " data  " + data);
         StepEventBus.getEventBus().clearStepFailures();
         StepEventBus.getEventBus().exampleStarted(data);
         currentExample++;
@@ -1166,8 +1168,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     private void finishExample() {
         StepEventBus.getEventBus().exampleFinished();
         exampleCount--;
-        Map<String, String> data = exampleRows.get(currentExample -1);
-        System.out.println("XXXExampleFinish " + exampleRows.size() + " # " + currentExample + " data "  + data);
+       // Map<String, String> data = exampleRows.get(currentExample -1);
+        //System.out.println("XXXExampleFinish " + exampleRows.size() + " # " + currentExample + " data "  + data);
         System.out.println("XXXExample count is " + exampleCount);
         if (exampleCount == 0) {
             examplesRunning = false;
