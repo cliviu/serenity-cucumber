@@ -267,16 +267,17 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             String scenarioId =  event.testCase.getUri() + " "  + scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName()));
             boolean newScenario = !scenarioId.equals(currentScenario);
             System.out.println("XXXScenarioDefinitionnewScenario " + currentScenario + " " + newScenario + " scenarioId " + scenarioId);
+            Feature currentFeature = testSources.getFeature(event.testCase.getUri());
             if(newScenario) {
                 if (scenarioDefinition instanceof Scenario) {
                     former_scenario((Scenario) scenarioDefinition);
-                    startOfScenarioLifeCycle((Scenario) scenarioDefinition);
+                    startOfScenarioLifeCycle(currentFeature,(Scenario) scenarioDefinition);
                 } else if (scenarioDefinition instanceof ScenarioOutline) {
                     examplesRunning = true;
                     former_scenarioOutline((ScenarioOutline) scenarioDefinition);
                     System.out.println("Number of examples " + ((ScenarioOutline) scenarioDefinition).getExamples().size());
                     examples(currentFeature.getName() + ";" + ((ScenarioOutline) scenarioDefinition).getName(), ((ScenarioOutline) scenarioDefinition).getExamples());
-                    startOfScenarioOutlineLifeCycle((ScenarioOutline) scenarioDefinition);
+                    startOfScenarioOutlineLifeCycle(currentFeature,(ScenarioOutline) scenarioDefinition);
                 }
                 currentScenario = event.testCase.getUri() + " " + scenarioIdFrom(TestSourcesModel.convertToId(scenarioDefinition.getName()));
             } else {
@@ -990,25 +991,25 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     String currentScenario;
 
 
-    private void startOfScenarioLifeCycle(Scenario scenario) {
+    private void startOfScenarioLifeCycle(Feature currentFeature,Scenario scenario) {
 
         boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName())).equals(currentScenario);
         currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName()));
         if (examplesRunning) {
 
             if (newScenario) {
-                startScenario(scenario);
+                startScenario(currentFeature,scenario);
                 StepEventBus.getEventBus().useExamplesFrom(table);
             } else {
                 StepEventBus.getEventBus().addNewExamplesFrom(table);
             }
             startExample();
         } else {
-            startScenario(scenario);
+            startScenario(currentFeature,scenario);
         }
     }
 
-    private void startOfScenarioOutlineLifeCycle(ScenarioOutline scenario ) {
+    private void startOfScenarioOutlineLifeCycle(Feature currentFeature,ScenarioOutline scenario ) {
 
         //System.out.println("XXXstartofScenarioOutlineLifeCycle " + scenario);
         boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(scenario.getName())).equals(currentScenario);
@@ -1017,7 +1018,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         if (examplesRunning) {
 
             if (newScenario) {
-                startScenario(scenario);
+                startScenario(currentFeature,scenario);
                 System.out.println("XXXstartofScenarioOutlineLifeCycle useexamples from " + table );
                 StepEventBus.getEventBus().useExamplesFrom(table);
             } else {
@@ -1025,12 +1026,12 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             }
             startExample();
         } else {
-            startScenario(scenario);
+            startScenario(currentFeature,scenario);
         }
 
     }
 
-    private void startScenario(Scenario scenario) {
+    private void startScenario(Feature currentFeature,Scenario scenario) {
         clearScenarioResult();
         StepEventBus.getEventBus().setTestSource(StepEventBus.TEST_SOURCE_CUCUMBER);
         StepEventBus.getEventBus().testStarted(scenario.getName(), TestSourcesModel.convertToId(scenario.getName()));
@@ -1045,7 +1046,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         updateTestResultsFromTags();
     }
 
-    private void startScenario(ScenarioOutline scenario) {
+    private void startScenario(Feature currentFeature,ScenarioOutline scenario) {
         clearScenarioResult();
         StepEventBus.getEventBus().setTestSource(StepEventBus.TEST_SOURCE_CUCUMBER);
         StepEventBus.getEventBus().testStarted(scenario.getName(), TestSourcesModel.convertToId(scenario.getName()));
