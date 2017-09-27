@@ -139,6 +139,19 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             handleTestStepFinished(event);
         }
     };
+
+    private EventHandler<TestRunStarted> runStartedHandler = new EventHandler<TestRunStarted>() {
+        @Override
+        public void receive(TestRunStarted event) {
+            handleTestRunStarted(event);
+        }
+    };
+
+    private void handleTestRunStarted(TestRunStarted event)
+    {
+        System.out.println("XXXHandleTestRunStarted " + event);
+    }
+
     private EventHandler<TestRunFinished> runFinishedHandler = new EventHandler<TestRunFinished>() {
         @Override
         public void receive(TestRunFinished event) {
@@ -163,13 +176,15 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     public void setEventPublisher(EventPublisher publisher) {
         System.out.println("XXX SetEvent Publisher " + publisher);
         publisher.registerHandlerFor(TestSourceRead.class, testSourceReadHandler);
+        publisher.registerHandlerFor(TestRunStarted.class, runStartedHandler);
+        publisher.registerHandlerFor(TestRunFinished.class, runFinishedHandler);
         publisher.registerHandlerFor(TestCaseStarted.class, caseStartedHandler);
         publisher.registerHandlerFor(TestCaseFinished.class, caseFinishedHandler);
         publisher.registerHandlerFor(TestStepStarted.class, stepStartedHandler);
         publisher.registerHandlerFor(TestStepFinished.class, stepFinishedHandler);
         publisher.registerHandlerFor(WriteEvent.class, writeEventhandler);
         publisher.registerHandlerFor(EmbedEvent.class, embedEventhandler);
-        publisher.registerHandlerFor(TestRunFinished.class, runFinishedHandler);
+
     }
 
     private void handleTestSourceRead(TestSourceRead event) {
@@ -574,22 +589,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         } else if(event.testStep instanceof UnskipableStep){
             System.out.println("XXXUnskippableTestEvent " + event.result.getStatus() + " " + event.testStep + " is hook " + ((UnskipableStep)event.testStep).getHookType());
         }
-
-
-        /*if (examplesRunning) {
-            finishExample();
-        } */
-
-
-        /*if (examplesRunning) {
-            //finishExample();
-            StepEventBus.getEventBus().exampleFinished();
-            exampleCount--;
-            System.out.println("StepFinished XXXExample count " + exampleCount);
-            if (exampleCount == 0) {
-                examplesRunning = false;
-            }
-        } */
     }
 
     private void handleTestRunFinished(TestRunFinished event) {
@@ -600,6 +599,11 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             //TODO
             System.out.println("XXX FinishedReport " + scenarioDefinition);
             checkForLifecycleTags((Scenario)scenarioDefinition);
+        }
+        if(scenarioDefinition != null && scenarioDefinition instanceof ScenarioOutline) {
+            //TODO
+            System.out.println("XXX FinishedReport " + scenarioDefinition);
+            checkForLifecycleTags((ScenarioOutline)scenarioDefinition);
         }
         updateTestResultsFromTags();
 
@@ -745,6 +749,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private void checkForManualScenario(List<Tag> tags) {
         if (isManual(tags)) {
+            System.out.println("XXXFoundManualScenarioOutline" + tags);
             forcedScenarioResult = Optional.of(TestResult.SKIPPED);
             StepEventBus.getEventBus().testIsManual();
             StepEventBus.getEventBus().suspendTest(TestResult.SKIPPED);
@@ -1088,6 +1093,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void updateTestResultsFromTags() {
+        System.out.println("XXXUpdateTestResultsFromTags " + forcedResult());
+        Thread.dumpStack();
         if (!forcedResult().isPresent()) {
             return;
         }
@@ -1203,7 +1210,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         }
         String backgroundDescription = background.getDescription();
         if(backgroundDescription == null) {
-            backgroundDescription = "";
+            backgroundDescription = " ";
         }
         if(backgroundDescription != null) {
             StepEventBus.getEventBus().setBackgroundDescription(backgroundDescription);
