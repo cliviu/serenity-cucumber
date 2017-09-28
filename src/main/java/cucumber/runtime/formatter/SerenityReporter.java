@@ -228,6 +228,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestCaseStarted(TestCaseStarted event) {
+        System.out.println("XXXHandleTestCase--Started " + event.testCase.getName());
         if (currentFeatureFile == null || !currentFeatureFile.equals(event.testCase.getUri())) {
             currentFeatureFile = event.testCase.getUri();
             Map<String, Object> currentFeatureMap = createFeatureMap(event.testCase);
@@ -309,7 +310,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestCaseFinished(TestCaseFinished event) {
-        System.out.println("HandleTestCaseFinished " + event.testCase.getName());
+        System.out.println("XXXHandleTestCase--Finished " + event.testCase.getName());
         //TODO
         /*if(examplesRunning) {
             finishExample_new();
@@ -521,6 +522,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private synchronized void handleTestStepStarted(TestStepStarted event) {
+        System.out.println("XXXHandleTestStep--Started " + event);
         if (!event.testStep.isHook()) {
             if (isFirstStepAfterBackground(event.testStep)) {
                 currentElementMap = currentTestCaseMap;
@@ -560,15 +562,16 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
             System.out.println("HandleMatch " + testStep.getPattern());
         //if (match instanceof StepDefinitionMatch) {
+        //if (testStep.) {
             Step currentStep = stepQueue.peek();
-            String stepTitle = stepTitleFrom(currentStep,testStep);
+            String stepTitle = stepTitleFrom(currentStep, testStep);
             System.out.println("HandleMatch for step " + testStep + " with title " + stepTitle + " and class " + testStep.getClass());
-            if(stepTitle == null)
-            {
+            if (stepTitle == null) {
                 stepTitle = "dummy";
             }
             StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitle));
             StepEventBus.getEventBus().updateCurrentStepTitle(normalized(stepTitle));
+        //}
     }
 
 
@@ -581,6 +584,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private synchronized void handleTestStepFinished(TestStepFinished event) {
+        System.out.println("XXXHandleTestStep--Finished " + event);
         System.out.println("XXXTestStepFinished " + ((event.testStep instanceof PickleTestStep) ? event.testStep.getStepText(): event.testStep) + " result " + event.result.getStatus());
         currentStepOrHookMap.put("match", createMatchMap(event.testStep, event.result));
         currentStepOrHookMap.put("result", createResultMap(event.result));
@@ -1278,7 +1282,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         } else if (Result.Type.PENDING.equals(result.getStatus())) {
             StepEventBus.getEventBus().stepPending();
         } else if (Result.Type.UNDEFINED.equals(result.getStatus())) {
-            StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitleFrom(currentStep,currentTestStep)));
+            //not needed anymore
+            //StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitleFrom(currentStep, currentTestStep)));
             StepEventBus.getEventBus().stepPending();
         }
 
