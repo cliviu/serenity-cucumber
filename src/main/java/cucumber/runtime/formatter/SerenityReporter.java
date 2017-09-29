@@ -315,7 +315,10 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         /*if(examplesRunning) {
             finishExample_new();
         } */
-        handleResult(event.result);
+        //TODO check if necessary
+        if(examplesRunning) {
+            handleResult(event.result);
+        }
         /*if(event.testStep instanceof PickleTestStep) {
            handleResult(event.result);
         } */
