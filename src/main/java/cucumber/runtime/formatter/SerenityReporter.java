@@ -5,23 +5,47 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import cucumber.api.HookType;
 import cucumber.api.Result;
 import cucumber.api.TestCase;
 import cucumber.api.TestStep;
-import cucumber.api.event.*;
+import cucumber.api.event.EventHandler;
+import cucumber.api.event.EventPublisher;
+import cucumber.api.event.TestCaseFinished;
+import cucumber.api.event.TestCaseStarted;
+import cucumber.api.event.TestRunFinished;
+import cucumber.api.event.TestRunStarted;
+import cucumber.api.event.TestSourceRead;
+import cucumber.api.event.TestStepFinished;
+import cucumber.api.event.TestStepStarted;
+import cucumber.api.event.WriteEvent;
 import cucumber.api.formatter.Formatter;
 import cucumber.runner.PickleTestStep;
-import cucumber.runner.UnskipableStep;
 import cucumber.runtime.Match;
-import gherkin.ast.*;
-import gherkin.pickles.*;
+import gherkin.ast.Background;
+import gherkin.ast.Examples;
+import gherkin.ast.Feature;
+import gherkin.ast.Scenario;
+import gherkin.ast.ScenarioDefinition;
+import gherkin.ast.ScenarioOutline;
+import gherkin.ast.Step;
+import gherkin.ast.TableCell;
+import gherkin.ast.TableRow;
+import gherkin.ast.Tag;
+import gherkin.pickles.Argument;
+import gherkin.pickles.PickleCell;
+import gherkin.pickles.PickleRow;
+import gherkin.pickles.PickleString;
+import gherkin.pickles.PickleTable;
+import gherkin.pickles.PickleTag;
 import net.serenitybdd.core.Serenity;
 import net.serenitybdd.core.SerenityListeners;
 import net.serenitybdd.core.SerenityReports;
 import net.serenitybdd.cucumber.model.FeatureFileContents;
 import net.thucydides.core.model.DataTable;
-import net.thucydides.core.model.*;
+import net.thucydides.core.model.Story;
+import net.thucydides.core.model.TestOutcome;
+import net.thucydides.core.model.TestResult;
+import net.thucydides.core.model.TestTag;
 import net.thucydides.core.model.stacktrace.FailureCause;
 import net.thucydides.core.model.stacktrace.RootCauseAnalyzer;
 import net.thucydides.core.reports.ReportService;
@@ -35,19 +59,22 @@ import net.thucydides.core.webdriver.ThucydidesWebDriverSupport;
 import org.junit.internal.AssumptionViolatedException;
 
 import java.io.File;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
 import java.util.stream.Collectors;
 
-import static cucumber.runtime.formatter.TaggedScenario.*;
+import static cucumber.runtime.formatter.TaggedScenario.isIgnored;
+import static cucumber.runtime.formatter.TaggedScenario.isManual;
+import static cucumber.runtime.formatter.TaggedScenario.isPending;
+import static cucumber.runtime.formatter.TaggedScenario.isSkippedOrWIP;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
-
-//import static net.serenitybdd.cucumber.TaggedScenario.*;
-
-//import gherkin.formatter.Formatter;
-/*import gherkin.formatter.Reporter;
-import gherkin.formatter.model.*;
-import gherkin.formatter.model.DataTableRow;*/
 
 /**
  * Generates Thucydides reports.
@@ -82,7 +109,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private DataTable table;
 
-  //  private boolean waitingToProcessBackgroundSteps = false;
+    private boolean waitingToProcessBackgroundSteps = false;
 
     private String currentUri;
 
@@ -98,14 +125,9 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private FeatureFileContents featureFileContents;
 
-
     private String currentFeatureFile;
     private List<Map<String, Object>> featureMaps = new ArrayList<Map<String, Object>>();
-    private List<Map<String, Object>> currentElementsList;
-    private Map<String, Object> currentElementMap;
     private Map<String, Object> currentTestCaseMap;
-    private List<Map<String, Object>> currentStepsList;
-    private Map<String, Object> currentStepOrHookMap;
     private final TestSourcesModel testSources = new TestSourcesModel();
 
     private EventHandler<TestSourceRead> testSourceReadHandler = new EventHandler<TestSourceRead>() {
@@ -126,7 +148,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             handleTestCaseFinished(event);
         }
     };
-
     private EventHandler<TestStepStarted> stepStartedHandler = new EventHandler<TestStepStarted>() {
         @Override
         public void receive(TestStepStarted event) {
@@ -158,23 +179,15 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             handleTestRunFinished(event);
         }
     };
-    private EventHandler<WriteEvent> writeEventhandler = new EventHandler<WriteEvent>() {
+    private EventHandler<WriteEvent> writeEventHandler = new EventHandler<WriteEvent>() {
         @Override
         public void receive(WriteEvent event) {
             handleWrite(event);
         }
     };
-    private EventHandler<EmbedEvent> embedEventhandler = new EventHandler<EmbedEvent>() {
-        @Override
-        public void receive(EmbedEvent event) {
-            handleEmbed(event);
-        }
-    };
-
 
     @Override
     public void setEventPublisher(EventPublisher publisher) {
-        System.out.println("XXX SetEvent Publisher " + publisher);
         publisher.registerHandlerFor(TestSourceRead.class, testSourceReadHandler);
         publisher.registerHandlerFor(TestRunStarted.class, runStartedHandler);
         publisher.registerHandlerFor(TestRunFinished.class, runFinishedHandler);
@@ -182,13 +195,10 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         publisher.registerHandlerFor(TestCaseFinished.class, caseFinishedHandler);
         publisher.registerHandlerFor(TestStepStarted.class, stepStartedHandler);
         publisher.registerHandlerFor(TestStepFinished.class, stepFinishedHandler);
-        publisher.registerHandlerFor(WriteEvent.class, writeEventhandler);
-        publisher.registerHandlerFor(EmbedEvent.class, embedEventhandler);
-
+        publisher.registerHandlerFor(WriteEvent.class, writeEventHandler);
     }
 
     private void handleTestSourceRead(TestSourceRead event) {
-        System.out.println("XXX handle TestSourceRead " + event.uri);
         testSources.addTestSourceReadEvent(event.uri, event);
         String uri = event.uri;
         currentUri = uri;
@@ -200,9 +210,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         defaultFeatureName = Inflector.getInstance().humanize(defaultFeatureId);
         featureFileContents = new FeatureFileContents(uri);
 
-
         Feature feature = testSources.getFeature(event.uri);
-
         assureTestSuiteFinished();
         if (feature.getName().isEmpty()) {
             feature = featureWithDefaultName(feature, defaultFeatureName, defaultFeatureId);
@@ -228,75 +236,41 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     private void handleTestCaseStarted(TestCaseStarted event) {
-        System.out.println("XXXHandleTestCase--Started " + event.testCase.getName());
         if (currentFeatureFile == null || !currentFeatureFile.equals(event.testCase.getUri())) {
             currentFeatureFile = event.testCase.getUri();
             Map<String, Object> currentFeatureMap = createFeatureMap(event.testCase);
             featureMaps.add(currentFeatureMap);
-            currentElementsList = (List<Map<String, Object>>) currentFeatureMap.get("elements");
+            //currentElementsList = (List<Map<String, Object>>) currentFeatureMap.get("elements");
         }
         currentTestCaseMap = createTestCase(event.testCase);
-        if (testSources.hasBackground(currentFeatureFile, event.testCase.getLine())) {
+       /* if (testSources.hasBackground(currentFeatureFile, event.testCase.getLine())) {
             currentElementMap = createBackground(event.testCase);
             currentElementsList.add(currentElementMap);
         } else {
             currentElementMap = currentTestCaseMap;
         }
-        currentElementsList.add(currentTestCaseMap);
-        currentStepsList = (List<Map<String, Object>>) currentElementMap.get("steps");
-
-       /* TestCase testCase = event.testCase;
-        Feature feature = testSources.getFeature(testCase.getUri());
-
-        assureTestSuiteFinished();
-        if (testCase.getName().isEmpty()) {
-            feature = featureWithDefaultName(feature, defaultFeatureName, defaultFeatureId);
-        }
-
-        currentFeature = feature;
-        clearStoryResult();
-
-        configureDriver(feature);
-        getThucydidesListeners();
-        Story userStory = Story.withIdAndPath(TestSourcesModel.convertToId(feature.getName()), feature.getName(), currentUri).asFeature();
-
-        if (!isEmpty(feature.getDescription())) {
-            userStory = userStory.withNarrative(feature.getDescription());
-        }
-        StepEventBus.getEventBus().testSuiteStarted(userStory);
-
-        checkForPending(feature);
-        checkForSkipped(feature);
-        checkForIgnored(feature);
-        checkForManual(feature);    */
+        currentElementsList.add(currentTestCaseMap);*/
 
         System.out.println("TestCase line = " + event.testCase.getLine());
         TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, event.testCase.getLine());
 
-        TestSourcesModel.AstNode astNode1 = testSources.getAstNode(currentFeatureFile, 1);
-        System.out.println("Astnode1 " + astNode1);
-
         if (astNode != null) {
             ScenarioDefinition scenarioDefinition = TestSourcesModel.getScenarioDefinition(astNode);
-            System.out.println("XXXScenarioDefinition " + scenarioDefinition.getName() + " currentscenario " + currentScenario);
             Feature currentFeature = testSources.getFeature(event.testCase.getUri());
-            //add test case uri to scenario id because the sources are read in parallel, current feature cannot be used 
-            String scenarioId =  /*event.testCase.getUri() + " "  + */scenarioIdFrom(currentFeature.getName(),TestSourcesModel.convertToId(scenarioDefinition.getName()));
+            //the sources are read in parallel, current feature cannot be used
+            String scenarioId = scenarioIdFrom(currentFeature.getName(),TestSourcesModel.convertToId(scenarioDefinition.getName()));
             boolean newScenario = !scenarioId.equals(currentScenario);
-            System.out.println("XXXScenarioDefinitionnewScenario " + currentScenario + " " + newScenario + " scenarioId " + scenarioId);
-
             if(newScenario) {
                 if (scenarioDefinition instanceof Scenario) {
-                    former_scenario((Scenario) scenarioDefinition);
-                    startOfScenarioLifeCycle(currentFeature,(Scenario) scenarioDefinition);
+                    configureDriver(currentFeature);
+                    clearScenarioResult();
                 } else if (scenarioDefinition instanceof ScenarioOutline) {
                     examplesRunning = true;
                     former_scenarioOutline((ScenarioOutline) scenarioDefinition);
-                    System.out.println("Number of examples " + ((ScenarioOutline) scenarioDefinition).getExamples().size());
-                    examples(currentFeature.getName() , ((ScenarioOutline) scenarioDefinition).getName(), ((ScenarioOutline) scenarioDefinition).getExamples());
-                    startOfScenarioOutlineLifeCycle(currentFeature,(ScenarioOutline) scenarioDefinition);
+                    examples(currentFeature.getName(),scenarioDefinition.getName(),((ScenarioOutline)scenarioDefinition).getExamples());
                 }
-                currentScenario = /*event.testCase.getUri() + " " +*/ scenarioIdFrom(currentFeature.getName(),TestSourcesModel.convertToId(scenarioDefinition.getName()));
+                startOfScenarioLifeCycle(currentFeature,scenarioDefinition);
+                currentScenario = scenarioIdFrom(currentFeature.getName(),TestSourcesModel.convertToId(scenarioDefinition.getName()));
             } else {
                 if (scenarioDefinition instanceof ScenarioOutline) {
                     startExample();
@@ -304,42 +278,22 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             }
             Background background = TestSourcesModel.getBackgoundForTestCase(astNode);
             if(background != null) {
-                former_background(background);
+                handleBackground(background);
             }
         }
     }
 
     private void handleTestCaseFinished(TestCaseFinished event) {
-        System.out.println("XXXHandleTestCase--Finished " + event.testCase.getName());
-        //TODO
-        /*if(examplesRunning) {
-            finishExample_new();
-        } */
-        //TODO check if necessary
         if(examplesRunning) {
             handleResult(event.result);
         }
-        /*if(event.testStep instanceof PickleTestStep) {
-           handleResult(event.result);
-        } */
-        //if(examplesRunning) {
-       //     Map<String, Object> map = (Map<String,Object>)currentStepOrHookMap.get("result");
-//            handleResult((Result)map.get("result"));
-            //handleResult(stepQueue.poll());
-        //}
-
-            //if (examplesRunning) { //finish enclosing step because testFinished resets the queue
-              //  StepEventBus.getEventBus().stepFinished();
-            //}
         updatePendingResults();
         updateSkippedResults();
         StepEventBus.getEventBus().testFinished();
         stepQueue.clear();
-
         if (examplesRunning) {
             finishExample();
         }
-        
     }
 
     private Map<String, Object> createFeatureMap(TestCase testCase) {
@@ -387,7 +341,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         if (astNode != null) {
             Background background = TestSourcesModel.getBackgoundForTestCase(astNode);
             //TODO
-            //former_background(background);
+            //handleBackground(background);
             Map<String, Object> testCaseMap = new HashMap<String, Object>();
             testCaseMap.put("name", background.getName());
             testCaseMap.put("line", background.getLocation().getLine());
@@ -400,7 +354,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         return null;
     }
 
-    private boolean isFirstStepAfterBackground(TestStep testStep) {
+   /* private boolean isFirstStepAfterBackground(TestStep testStep) {
         TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, testStep.getStepLine());
         if (astNode != null) {
             if (currentElementMap != currentTestCaseMap && !TestSourcesModel.isBackgroundStep(astNode)) {
@@ -408,7 +362,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             }
         }
         return false;
-    }
+    }*/
 
     private Map<String, Object> createTestStep(TestStep testStep) {
         Map<String, Object> stepMap = new HashMap<String, Object>();
@@ -447,7 +401,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
             rowMap.put("cells", createCellList(row));
             rowList.add(rowMap);
         }
-        System.out.println("CreateDataTableList " + rowList);
         return rowList;
     }
 
@@ -456,174 +409,56 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         for (PickleCell cell : row.getCells()) {
             cells.add(cell.getValue());
         }
-        System.out.println("XXX CreateCellList " + cells);
         return cells;
     }
 
-    private Map<String, Object> createHookStep(TestStep testStep) {
-        return new HashMap<String, Object>();
-    }
 
-    private void addHookStepToTestCaseMap(Map<String, Object> currentStepOrHookMap, HookType hookType) {
-        if (!currentTestCaseMap.containsKey(hookType.toString())) {
-            currentTestCaseMap.put(hookType.toString(), new ArrayList<Map<String, Object>>());
-        }
-        ((List<Map<String, Object>>)currentTestCaseMap.get(hookType.toString())).add(currentStepOrHookMap);
-    }
-
-    private void addOutputToHookMap(String text) {
-        if (!currentStepOrHookMap.containsKey("output")) {
-            currentStepOrHookMap.put("output", new ArrayList<String>());
-        }
-        ((List<String>)currentStepOrHookMap.get("output")).add(text);
-    }
-
-    private void addEmbeddingToHookMap(byte[] data, String mimeType) {
-        if (!currentStepOrHookMap.containsKey("embedding")) {
-            currentStepOrHookMap.put("embedding", new ArrayList<Map<String, Object>>());
-        }
-        Map<String, Object> embedMap = createEmbeddingMap(data, mimeType);
-        ((List<Map<String, Object>>)currentStepOrHookMap.get("embedding")).add(embedMap);
-    }
-
-    private Map<String, Object> createEmbeddingMap(byte[] data, String mimeType) {
-        Map<String, Object> embedMap = new HashMap<String, Object>();
-        embedMap.put("mime_type", mimeType);
-        //embedMap.put("data", Base64.encodeBytes(data));
-        return embedMap;
-    }
-
-    
-    private Map<String, Object> createMatchMap(TestStep testStep, Result result) {
-        Map<String, Object> matchMap = new HashMap<String, Object>();
-        if (!testStep.getDefinitionArgument().isEmpty()) {
-            List<Map<String, Object>> argumentList = new ArrayList<Map<String, Object>>();
-            for (cucumber.runtime.Argument argument : testStep.getDefinitionArgument()) {
-                Map<String, Object> argumentMap = new HashMap<String, Object>();
-                argumentMap.put("val", argument.getVal());
-                argumentMap.put("offset", argument.getOffset());
-                argumentList.add(argumentMap);
-            }
-            matchMap.put("arguments", argumentList);
-        }
-        if (!result.is(Result.Type.UNDEFINED)) {
-            matchMap.put("location", testStep.getCodeLocation());
-        }
-        return matchMap;
-    }
-
-    private Map<String, Object> createResultMap(Result result) {
-        Map<String, Object> resultMap = new HashMap<String, Object>();
-        resultMap.put("result", result);
-        if (result.getErrorMessage() != null) {
-            resultMap.put("error_message", result.getErrorMessage());
-        }
-        if (result.getDuration() != null && result.getDuration() != 0) {
-            resultMap.put("duration", result.getDuration());
-        }
-        return resultMap;
-    }
-
-    private synchronized void handleTestStepStarted(TestStepStarted event) {
-        System.out.println("XXXHandleTestStep--Started " + event);
-        if (!event.testStep.isHook()) {
-            if (isFirstStepAfterBackground(event.testStep)) {
-                currentElementMap = currentTestCaseMap;
-                currentStepsList = (List<Map<String, Object>>) currentElementMap.get("steps");
-            }
-            currentStepOrHookMap = createTestStep(event.testStep);
-            currentStepsList.add(currentStepOrHookMap);
-        } else {
-            currentStepOrHookMap = createHookStep(event.testStep);
-            addHookStepToTestCaseMap(currentStepOrHookMap, event.testStep.getHookType());
-        }
-
+    private void handleTestStepStarted(TestStepStarted event)
+    {
         if(event.testStep instanceof PickleTestStep) {
-            System.out.println("HandleTestStepStarted:PickleTestStep " + event);
             TestSourcesModel.AstNode astNode = testSources.getAstNode(currentFeatureFile, event.testStep.getStepLine());
             if (astNode != null) {
                 Step step = (Step) astNode.node;
-                handleStep(step,event.testStep);
-                handleMatch(event.testStep);
+                if (!addingScenarioOutlineSteps) {
+                    stepQueue.add(step);
+                    testStepQueue.add(event.testStep);
+                }
+                Step currentStep = stepQueue.peek();
+                String stepTitle = stepTitleFrom(currentStep, event.testStep);
+                if (stepTitle == null) {
+                    stepTitle = "dummy";
+                }
+                StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitle));
+                StepEventBus.getEventBus().updateCurrentStepTitle(normalized(stepTitle));
             }
-        } else {
-            System.out.println("UnskippableStep " + event.testStep);
-        }
-
-    }
-
-    public void handleStep(Step step,TestStep testStep) {
-        System.out.println("HandleStep " + step + " " + addingScenarioOutlineSteps);
-        //if (!addingScenarioOutlineSteps) {
-        if (!addingScenarioOutlineSteps) {
-            stepQueue.add(step);
-            testStepQueue.add(testStep);
         }
     }
 
-    private void handleMatch(TestStep testStep) {
 
-            System.out.println("HandleMatch " + testStep.getPattern());
-        //if (match instanceof StepDefinitionMatch) {
-        //if (testStep.) {
-            Step currentStep = stepQueue.peek();
-            String stepTitle = stepTitleFrom(currentStep, testStep);
-            System.out.println("HandleMatch for step " + testStep + " with title " + stepTitle + " and class " + testStep.getClass());
-            if (stepTitle == null) {
-                stepTitle = "dummy";
-            }
-            StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(stepTitle));
-            StepEventBus.getEventBus().updateCurrentStepTitle(normalized(stepTitle));
-        //}
-    }
 
 
     private void handleWrite(WriteEvent event) {
         StepEventBus.getEventBus().stepStarted(ExecutedStepDescription.withTitle(event.text));
     }
 
-    private void handleEmbed(EmbedEvent event) {
-        //addEmbeddingToHookMap(event.data, event.mimeType);
-    }
-
-    private synchronized void handleTestStepFinished(TestStepFinished event) {
-        System.out.println("XXXHandleTestStep--Finished " + event);
-        System.out.println("XXXTestStepFinished " + ((event.testStep instanceof PickleTestStep) ? event.testStep.getStepText(): event.testStep) + " result " + event.result.getStatus());
-        currentStepOrHookMap.put("match", createMatchMap(event.testStep, event.result));
-        currentStepOrHookMap.put("result", createResultMap(event.result));
-
+    private void handleTestStepFinished(TestStepFinished event)
+    {
         if(event.testStep instanceof PickleTestStep) {
             handleResult(event.result);
-        } else if(event.testStep instanceof UnskipableStep){
-            System.out.println("XXXUnskippableTestEvent " + event.result.getStatus() + " " + event.testStep + " is hook " + ((UnskipableStep)event.testStep).getHookType());
         }
     }
 
-    private void handleTestRunFinished(TestRunFinished event) {
-
-        System.out.println("XXX FinishedReport1 " + event);
+    private void handleTestRunFinished(TestRunFinished event)
+    {
         ScenarioDefinition scenarioDefinition = (ScenarioDefinition)currentTestCaseMap.get("scenarioDefinition");
-        if(scenarioDefinition != null && scenarioDefinition instanceof Scenario) {
-            //TODO
-            System.out.println("XXX FinishedReportScenario " + scenarioDefinition);
-            checkForLifecycleTags((Scenario)scenarioDefinition);
-        }
-        if(scenarioDefinition != null && scenarioDefinition instanceof ScenarioOutline) {
-            //TODO
-            System.out.println("XXX FinishedReportScenarioOutline " + scenarioDefinition);
-            checkForLifecycleTags((ScenarioOutline)scenarioDefinition);
-        }
+        checkForLifecycleTags(scenarioDefinition);
         updateTestResultsFromTags();
-
         if (examplesRunning) {
             finishExample();
         } else {
             generateReports();
-        } 
-        //if(!examplesRunning) {
-        //    generateReports();
-        //}
-        former_done();
+        }
+        assureTestSuiteFinished();
     }
 
     private void clearStoryResult() {
@@ -673,32 +508,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     FeatureFileContents featureFileContents() {
         return new FeatureFileContents(currentUri);
     }
-
-   /* @Override
-    public void feature(Feature feature) {
-
-        assureTestSuiteFinished();
-        if (feature.getName().isEmpty()) {
-            feature = featureWithDefaultName(feature, defaultFeatureName, defaultFeatureId);
-        }
-
-        currentFeature = feature;
-        clearStoryResult();
-
-        configureDriver(feature);
-        getThucydidesListeners();
-        Story userStory = Story.withIdAndPath(feature.getId(), feature.getName(), currentUri).asFeature();
-
-        if (!isEmpty(feature.getDescription())) {
-            userStory = userStory.withNarrative(feature.getDescription());
-        }
-        StepEventBus.getEventBus().testSuiteStarted(userStory);
-
-        checkForPending(feature);
-        checkForSkipped(feature);
-        checkForIgnored(feature);
-        checkForManual(feature);
-    }*/
 
     private Feature featureWithDefaultName(Feature feature, String defaultName, String id) {
         return feature; //TODO
@@ -757,7 +566,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     private void checkForManualScenario(List<Tag> tags) {
         if (isManual(tags)) {
-            System.out.println("XXXFoundManualScenarioOutline" + tags);
             forcedScenarioResult = Optional.of(TestResult.SKIPPED);
             StepEventBus.getEventBus().testIsManual();
             StepEventBus.getEventBus().suspendTest(TestResult.SKIPPED);
@@ -814,7 +622,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
 
     public void former_scenarioOutline(ScenarioOutline scenarioOutline) {
         addingScenarioOutlineSteps = true;
-        //scenarioOutlineStartsAt = scenarioOutline.getLine();
+        scenarioOutlineStartsAt = scenarioOutline.getLocation().getLine();
     }
 
     String currentScenarioId;
@@ -825,6 +633,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         Thread.dumpStack();
         /*String scenarioOutline = featureFileContents.betweenLine(scenarioOutlineStartsAt)
                 .and(examples.getLine() - 1);*/
+        //scenarioOutlineEndsAt = examples.getLine() - 1;
 
         addingScenarioOutlineSteps = false;
         reinitializeExamples();
@@ -838,23 +647,12 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
                 addRow(exampleRows, headers, examplesTableRows.get(i));
 
             }
-
-            System.out.println(" Outline id " + id);
             String scenarioId = scenarioIdFrom(featureName,id);
             boolean newScenario = !scenarioId.equals(currentScenarioId);
-            System.out.println(" ExName " + examples.getName());
-            System.out.println(" ScenarioId " + scenarioId + " vs " + currentScenarioId);
-            System.out.println(" newScenario " + newScenario);
-
             table = (newScenario) ?
                     thucydidesTableFrom(SCENARIO_OUTLINE_NOT_KNOWN_YET, headers, rows, trim(examples.getName()), trim(examples.getDescription()))
                     : addTableRowsTo(table, headers, rows, trim(examples.getName()), trim(examples.getDescription()));
-            //System.out.println("Examples description " + examples.getDescription() + " " + examples.getDescription().length());
-            //System.out.println("Examples description trim " + examples.getDescription().trim( + " " +  examples.getDescription().trim().length());
-            System.out.println(table.hashCode() + " XXXtable " + table.getRows().size());
-            //exampleCount = examples.getTableBody().size();
             exampleCount = table.getSize();
-            System.out.println(" XXXExample count  " + exampleCount);
             currentScenarioId = scenarioId;
         }
     }
@@ -1009,7 +807,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     String currentScenario;
 
 
-    private void startOfScenarioLifeCycle(Feature currentFeature,Scenario scenario) {
+    private void startOfScenarioLifeCycle(Feature currentFeature,ScenarioDefinition scenario) {
 
         boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(currentFeature.getName()),TestSourcesModel.convertToId(scenario.getName())).equals(currentScenario);
         currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(currentFeature.getName()),TestSourcesModel.convertToId(scenario.getName()));
@@ -1027,78 +825,54 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         }
     }
 
-    private void startOfScenarioOutlineLifeCycle(Feature currentFeature,ScenarioOutline scenario ) {
-
-        //System.out.println("XXXstartofScenarioOutlineLifeCycle " + scenario);
-        boolean newScenario = !scenarioIdFrom(TestSourcesModel.convertToId(currentFeature.getName()),TestSourcesModel.convertToId(scenario.getName())).equals(currentScenario);
-        System.out.println("XXXstartofScenarioOutlineLifeCycle " + newScenario);
-        currentScenario = scenarioIdFrom(TestSourcesModel.convertToId(currentFeature.getName()),TestSourcesModel.convertToId(scenario.getName()));
-        if (examplesRunning) {
-
-            if (newScenario) {
-                startScenario(currentFeature,scenario);
-                System.out.println("XXXstartofScenarioOutlineLifeCycle useexamples from " + table );
-                StepEventBus.getEventBus().useExamplesFrom(table);
-            } else {
-                StepEventBus.getEventBus().addNewExamplesFrom(table);
-            }
-            startExample();
-        } else {
-            startScenario(currentFeature,scenario);
+    private void startScenario(Feature currentFeature,ScenarioDefinition scenarioDefinition) {
+        clearScenarioResult();
+        StepEventBus.getEventBus().setTestSource(StepEventBus.TEST_SOURCE_CUCUMBER);
+        StepEventBus.getEventBus().testStarted(scenarioDefinition.getName(),scenarioIdFrom(TestSourcesModel.convertToId(currentFeature.getName()), TestSourcesModel.convertToId(scenarioDefinition.getName())));
+        StepEventBus.getEventBus().addDescriptionToCurrentTest(scenarioDefinition.getDescription());
+        StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(currentFeature.getTags()));
+        if(isScenario(scenarioDefinition)) {
+            StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(((Scenario) scenarioDefinition).getTags()));
+        }
+        else if(isScenarioOutline(scenarioDefinition)) {
+            StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(((ScenarioOutline)scenarioDefinition).getTags()));
         }
 
-    }
-
-    private void startScenario(Feature currentFeature,Scenario scenario) {
-        clearScenarioResult();
-        StepEventBus.getEventBus().setTestSource(StepEventBus.TEST_SOURCE_CUCUMBER);
-        StepEventBus.getEventBus().testStarted(scenario.getName(),scenarioIdFrom(TestSourcesModel.convertToId(currentFeature.getName()), TestSourcesModel.convertToId(scenario.getName())));
-        StepEventBus.getEventBus().addDescriptionToCurrentTest(scenario.getDescription());
-        StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(currentFeature.getTags()));
-        StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(scenario.getTags()));
-
         registerFeatureJiraIssues(currentFeature.getTags());
-        registerScenarioJiraIssues(scenario.getTags());
+        if(isScenario(scenarioDefinition)) {
+            registerScenarioJiraIssues(((Scenario) scenarioDefinition).getTags());
+        }
+        else if(isScenarioOutline(scenarioDefinition)) {
+            registerScenarioJiraIssues(((ScenarioOutline)scenarioDefinition).getTags());
+        }
 
-        checkForLifecycleTags(scenario);
+        checkForLifecycleTags(scenarioDefinition);
         updateTestResultsFromTags();
     }
 
-    private void startScenario(Feature currentFeature,ScenarioOutline scenario) {
-        clearScenarioResult();
-        StepEventBus.getEventBus().setTestSource(StepEventBus.TEST_SOURCE_CUCUMBER);
-        StepEventBus.getEventBus().testStarted(scenario.getName(), scenarioIdFrom(TestSourcesModel.convertToId(currentFeature.getName()), TestSourcesModel.convertToId(scenario.getName())));
-        StepEventBus.getEventBus().addDescriptionToCurrentTest(scenario.getDescription());
-        StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(currentFeature.getTags()));
-        StepEventBus.getEventBus().addTagsToCurrentTest(convertCucumberTags(scenario.getTags()));
-
-        registerFeatureJiraIssues(currentFeature.getTags());
-        registerScenarioJiraIssues(scenario.getTags());
-
-        checkForLifecycleTags(scenario);
-        updateTestResultsFromTags();
+    private boolean isScenario(ScenarioDefinition scenarioDefinition) {
+        return scenarioDefinition instanceof Scenario;
     }
 
-    private void checkForLifecycleTags(Scenario scenario) {
+    private boolean isScenarioOutline(ScenarioDefinition scenarioDefinition) {
+        return scenarioDefinition instanceof ScenarioOutline;
+    }
+
+    private void checkForLifecycleTags(ScenarioDefinition scenarioDefinition) {
         checkForSkipped(currentFeature);
         checkForIgnored(currentFeature);
         checkForPending(currentFeature);
         checkForManual(currentFeature);
-        checkForPendingScenario(scenario.getTags());
-        checkForSkippedScenario(scenario.getTags());
-        checkForIgnoredScenario(scenario.getTags());
-        checkForManualScenario(scenario.getTags());
-    }
-
-    private void checkForLifecycleTags(ScenarioOutline scenario) {
-        checkForSkipped(currentFeature);
-        checkForIgnored(currentFeature);
-        checkForPending(currentFeature);
-        checkForManual(currentFeature);
-        checkForPendingScenario(scenario.getTags());
-        checkForSkippedScenario(scenario.getTags());
-        checkForIgnoredScenario(scenario.getTags());
-        checkForManualScenario(scenario.getTags());
+        List<Tag> tags = new ArrayList<>();
+        if(isScenario(scenarioDefinition)) {
+            tags = ((Scenario)scenarioDefinition).getTags();
+        } else if(isScenarioOutline(scenarioDefinition)) {
+            tags = ((ScenarioOutline)scenarioDefinition).getTags();
+        }
+        checkForPendingScenario(tags);
+        checkForSkippedScenario(tags);
+        checkForIgnoredScenario(tags);
+        checkForManualScenario(tags);
     }
 
     private Optional<TestResult> forcedResult() {
@@ -1188,17 +962,16 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     private void finishExample() {
         StepEventBus.getEventBus().exampleFinished();
         exampleCount--;
-       // Map<String, String> data = exampleRows.get(currentExample -1);
-        //System.out.println("XXXExampleFinish " + exampleRows.size() + " # " + currentExample + " data "  + data);
-        System.out.println("XXXExample count is " + exampleCount);
+
         if (exampleCount == 0) {
             examplesRunning = false;
 
-            /*String scenarioOutline = featureFileContents().trimmedContent()
+            //TODO
+            String scenarioOutline = featureFileContents().trimmedContent()
                     .betweenLine(scenarioOutlineStartsAt)
-                    .and(scenarioOutlineEndsAt);*/
-
-            table.setScenarioOutline("scenarioOutline");
+                    .and(scenarioOutlineEndsAt);
+            System.out.println("XXXSnarioOutline " + scenarioOutline + " " + scenarioOutlineStartsAt + "-- " + scenarioOutlineEndsAt);
+            table.setScenarioOutline(scenarioOutline);
             //System.out.println("XXXExample setscenariooutline " + scenarioOutline);
             generateReports();
         } else {
@@ -1213,8 +986,8 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     }
 
     //@Override
-    public void former_background(Background background) {
-        //waitingToProcessBackgroundSteps = true;
+    public void handleBackground(Background background) {
+        waitingToProcessBackgroundSteps = true;
         System.out.println("XXX Backgroundname " + background.getName());
         String backgroundName = background.getName();
         if(backgroundName == null) {
@@ -1233,22 +1006,6 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         }
     }
 
-
-    public void former_scenario(Scenario scenario) {
-        configureDriver(currentFeature);
-        clearScenarioResult();
-    }
-
-
-
-    public void former_done() {
-        assureTestSuiteFinished();
-    }
-
-
-    public void former_close() {
-        assureTestSuiteFinished();
-    }
 
     private void assureTestSuiteFinished() {
         if (currentFeature != null) {
@@ -1391,8 +1148,7 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         }
 
         return "";
-
-
+        //TODO
         //return (currentStep.getRows() == null || currentStep.getRows().isEmpty()) ?
                 //"" : convertToTextTable(currentStep.getRows());
     }
@@ -1413,13 +1169,9 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
         }
         return textTable.toString();
     }
-    
 
-    private synchronized void generateReports() {
-        System.out.println("XXXExample generate reports for outcomes " + getAllTestOutcomes().size() + " result is "  + getAllTestOutcomes().get(0).getResult());
-        Thread.dumpStack();
+    private  void generateReports() {
         getReportService().generateReportsFor(getAllTestOutcomes());
-
     }
 
     public List<TestOutcome> getAllTestOutcomes() {
@@ -1435,5 +1187,4 @@ public class SerenityReporter implements Formatter/*, Reporter*/ {
     {
         return (stringToBeTrimmed == null) ? stringToBeTrimmed : stringToBeTrimmed.trim();
     }
-
 }
